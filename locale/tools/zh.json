@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "DeepDuet 工具",
+    "description": "主控会话的后台 Worker 编排工具（session_spawn、session_steer、session_inspect、session_manage）。"
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "DeepDuet",
+    "description": "DeepDuet multi-session collaborative coding mode for DeepSeek Harness with persistent background Workers and optional Git worktree isolation."
+  }
+}

@@ -1,0 +1,9 @@
+# DeepDuet bundle patch for DeepSeek Harness.
+#
+# Mounts the DeepDuet host runtime (`tasks`, ledger, Worker prompt, Typert remote
+# handlers, and `deepduet` Cordis service). Client UI extensions are injected by
+# DSH via package.json's `dsh.client` (`dist/client.js`).
+
+- insert:
+    - id: deepduet
+      name: dsh-plugin-deepduet

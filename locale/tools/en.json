@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "DeepDuet Tools",
+    "description": "Master-session Worker orchestration tools (session_spawn, session_steer, session_inspect, session_manage)."
+  }
+}

@@ -1,0 +1,468 @@
+/* Sidebar row marks */
+.leadingMark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--dsw-border-subtle, rgba(128, 128, 128, 0.25));
+  color: var(--dsw-text-secondary, inherit);
+  background: var(--dsw-surface-subtle, rgba(128, 128, 128, 0.08));
+  white-space: nowrap;
+}
+
+.badgeRunning {
+  color: var(--dsw-accent, #2563eb);
+  border-color: rgba(37, 99, 235, 0.35);
+  background: rgba(37, 99, 235, 0.1);
+}
+
+.badgeDecision {
+  color: var(--dsw-warning, #d97706);
+  border-color: rgba(217, 119, 6, 0.45);
+  background: rgba(217, 119, 6, 0.12);
+}
+
+.badgeFailed {
+  color: var(--dsw-danger, #dc2626);
+  border-color: rgba(220, 38, 38, 0.4);
+  background: rgba(220, 38, 38, 0.1);
+}
+
+.hoverNote {
+  margin-top: 2px;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--dsw-text-muted, rgba(128, 128, 128, 0.85));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Header actions */
+.headerActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pillButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 9px;
+  border-radius: 999px;
+  border: 1px solid var(--dsw-border-subtle, rgba(128, 128, 128, 0.25));
+  background: var(--dsw-surface-subtle, rgba(128, 128, 128, 0.08));
+  color: var(--dsw-text-primary, inherit);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.pillButton:hover {
+  background: var(--dsw-surface-hover, rgba(128, 128, 128, 0.16));
+}
+
+.pillAlert {
+  border-color: rgba(217, 119, 6, 0.45);
+  background: rgba(217, 119, 6, 0.14);
+  color: var(--dsw-warning, #d97706);
+}
+
+.pillAlert:hover {
+  background: rgba(217, 119, 6, 0.22);
+}
+
+/* Input dock cards */
+.dockStack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.dockCard {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--dsw-border-subtle, rgba(128, 128, 128, 0.25));
+  background: var(--dsw-surface-elevated, rgba(128, 128, 128, 0.06));
+  font-size: 12.5px;
+}
+
+.dockDecisionCard {
+  border-color: rgba(217, 119, 6, 0.45);
+  background: rgba(217, 119, 6, 0.07);
+}
+
+.dockHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.dockTitle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  font-size: 12.5px;
+}
+
+.dockQuestion {
+  margin: 0;
+  line-height: 1.45;
+  color: var(--dsw-text-primary, inherit);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.dockForm {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dockInput {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 7px;
+  border: 1px solid var(--dsw-border-subtle, rgba(128, 128, 128, 0.3));
+  background: var(--dsw-bg-canvas, transparent);
+  color: var(--dsw-text-primary, inherit);
+  font-size: 12.5px;
+}
+
+.dockMeta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--dsw-text-secondary, rgba(128, 128, 128, 0.9));
+}
+
+.dockError {
+  font-size: 12px;
+  color: var(--dsw-danger, #dc2626);
+}
+
+/* Right sidebar tab panel */
+.panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  font-size: 13px;
+}
+
+.panelHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--dsw-border-subtle, rgba(128, 128, 128, 0.2));
+  flex-shrink: 0;
+}
+
+.panelTitle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.headerBtnRow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.filterBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--dsw-border-subtle, rgba(128, 128, 128, 0.14));
+  flex-shrink: 0;
+}
+
+.filterTabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.filterTab {
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--dsw-text-secondary, rgba(128, 128, 128, 0.9));
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.filterTabActive {
+  color: var(--dsw-text-primary, inherit);
+  background: var(--dsw-surface-subtle, rgba(128, 128, 128, 0.14));
+  border-color: var(--dsw-border-subtle, rgba(128, 128, 128, 0.25));
+  font-weight: 500;
+}
+
+.scrollArea {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.spawnForm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid var(--dsw-border-subtle, rgba(128, 128, 128, 0.25));
+  background: var(--dsw-surface-elevated, rgba(128, 128, 128, 0.05));
+}
+
+.fieldLabel {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.textInput,
+.textArea {
+  width: 100%;
+  box-sizing: border-box;
+  border-radius: 6px;
+  border: 1px solid var(--dsw-border-subtle, rgba(128, 128, 128, 0.3));
+  background: var(--dsw-bg-canvas, transparent);
+  color: var(--dsw-text-primary, inherit);
+  padding: 6px 8px;
+  font-size: 12.5px;
+  font-family: inherit;
+}
+
+.textArea {
+  min-height: 68px;
+  resize: vertical;
+}
+
+.checkboxRow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.taskList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.taskCard {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--dsw-border-subtle, rgba(128, 128, 128, 0.2));
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+  width: 100%;
+}
+
+.taskCard:hover {
+  background: var(--dsw-surface-subtle, rgba(128, 128, 128, 0.08));
+}
+
+.taskCardActive {
+  border-color: var(--dsw-accent, #2563eb);
+  background: var(--dsw-surface-elevated, rgba(37, 99, 235, 0.08));
+}
+
+.taskCardTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.taskCardTitle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  font-size: 12.5px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.taskCardMeta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--dsw-text-muted, rgba(128, 128, 128, 0.85));
+}
+
+.taskCardSummary {
+  font-size: 12px;
+  color: var(--dsw-text-secondary, inherit);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.detailCard {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid var(--dsw-border-subtle, rgba(128, 128, 128, 0.25));
+  background: var(--dsw-surface-elevated, rgba(128, 128, 128, 0.04));
+}
+
+.actionRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.sectionLabel {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--dsw-text-muted, rgba(128, 128, 128, 0.85));
+}
+
+.monoText {
+  font-family: var(--dsw-font-mono, ui-monospace, monospace);
+  font-size: 11.5px;
+  word-break: break-all;
+}
+
+.gitBox {
+  margin: 0;
+  padding: 8px;
+  border-radius: 6px;
+  border: 1px solid var(--dsw-border-subtle, rgba(128, 128, 128, 0.2));
+  background: var(--dsw-bg-canvas, rgba(0, 0, 0, 0.12));
+  font-family: var(--dsw-font-mono, ui-monospace, monospace);
+  font-size: 11.5px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.messageList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.messageRow {
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--dsw-border-subtle, rgba(128, 128, 128, 0.16));
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.messageRole {
+  font-weight: 600;
+  font-size: 11px;
+  margin-bottom: 2px;
+  color: var(--dsw-text-secondary, rgba(128, 128, 128, 0.9));
+}
+
+.emptyState {
+  padding: 20px 12px;
+  border-radius: 8px;
+  border: 1px dashed var(--dsw-border-subtle, rgba(128, 128, 128, 0.25));
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--dsw-text-secondary, rgba(128, 128, 128, 0.9));
+}
+
+/* Tool call views */
+.toolCard {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--dsw-border-subtle, rgba(128, 128, 128, 0.22));
+  background: var(--dsw-surface-elevated, rgba(128, 128, 128, 0.04));
+  font-size: 12.5px;
+}
+
+.toolCardHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.toolCardTitle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+}
+
+.toolCardBody {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--dsw-text-secondary, inherit);
+  white-space: pre-wrap;
+  word-break: break-word;
+}

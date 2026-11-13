@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "DeepDuet",
+    "description": "DeepSeek Harness 多会话协作编程模式，支持后台异步 Worker 与可选 Git Worktree 隔离。"
+  }
+}
