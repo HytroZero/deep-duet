@@ -481,6 +481,64 @@ test('built dist/client.js loads via __ModuleLoader__ and registers all GUI slot
     const injected = spec.inject()
     assert.ok(injected.hooks?.deepduet, 'Slot registration should inject hooks.deepduet observable')
   }
+
+  assert.equal(registeredLocales[0].dicts.zh['badge.master'], 'Duet')
+  assert.equal(registeredLocales[0].dicts.en['badge.master'], 'Duet')
+
+  const trailingSlot = registeredSlots.find(s => s.spec.name === 'sidebar.session.row.trailing')
+  assert.ok(trailingSlot)
+  const sampleTask = {
+    sessionId: 'worker-1',
+    masterId: 'master-by-task',
+    title: 'Worker',
+    goal: 'Work',
+    cwd: '/tmp',
+    status: 'idle',
+    needsDecision: false,
+    createdAt: 1,
+    updatedAt: 1,
+  }
+  const deepduetState = {
+    tasks: [sampleTask],
+    bySessionId: { 'worker-1': sampleTask },
+    byMasterId: { 'master-by-task': [sampleTask] },
+    inspections: {},
+    inspectLoading: {},
+    pendingActions: {},
+    selectedTaskId: undefined,
+    ready: true,
+    error: undefined,
+  }
+  const sessionsState = {
+    byId: {
+      'master-by-preset': { projectionValues: { agentPreset: 'deepduet' } },
+      'master-by-task': { projectionValues: { agentPreset: 'standard' } },
+      'worker-1': { projectionValues: { agentPreset: 'standard' } },
+      'plain-session': { projectionValues: { agentPreset: 'standard' } },
+    },
+  }
+  const renderTrailing = (sessionId) => {
+    const outer = trailingSlot.comp({
+      sessionId,
+      useDeepduet: (selector) => selector(deepduetState),
+      useSessions: (selector) => selector(sessionsState),
+    })
+    return outer.type(outer.props)
+  }
+
+  const presetMasterBadge = renderTrailing('master-by-preset')
+  assert.equal(presetMasterBadge?.props?.children, 'badge.master')
+  assert.match(presetMasterBadge?.props?.className ?? '', /badgeMaster/)
+
+  const taskMasterBadge = renderTrailing('master-by-task')
+  assert.equal(taskMasterBadge?.props?.children, 'badge.master')
+  assert.match(taskMasterBadge?.props?.className ?? '', /badgeMaster/)
+
+  const workerBadge = renderTrailing('worker-1')
+  assert.equal(workerBadge?.props?.children, 'status.idle')
+  assert.doesNotMatch(workerBadge?.props?.className ?? '', /badgeMaster/)
+
+  assert.equal(renderTrailing('plain-session'), null)
 })
 
 test('client store mounts and reads remote.deepduet under real Cordis service injection without throwing', async (t) => {

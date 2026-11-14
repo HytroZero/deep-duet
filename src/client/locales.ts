@@ -2,6 +2,7 @@ export const NS = 'deepduet' as const
 
 export const zh = {
   // Sidebar badges & context menu
+  'badge.master': 'Duet',
   'status.running': '运行中',
   'status.needsDecision': '待决策',
   'status.failed': '失败',
@@ -93,6 +94,7 @@ export type DeepDuetLocaleKey = keyof typeof zh
 
 export const en: Record<DeepDuetLocaleKey, string> = {
   // Sidebar badges & context menu
+  'badge.master': 'Duet',
   'status.running': 'Running',
   'status.needsDecision': 'Needs decision',
   'status.failed': 'Failed',

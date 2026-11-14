@@ -7,6 +7,7 @@ import {
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-store'
 import type { PropsRuntime, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
+import type {} from '@deepseek-ai/dsh-agent-preset-registry/types'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-ui-tool/client'
@@ -44,22 +45,41 @@ export function DeepDuetWorkerLeading({ store, useDeepduet, sessionId }: RowLead
   )
 }
 
-export function DeepDuetWorkerTrailing({ store, t, useDeepduet, sessionId }: RowTrailingProps) {
+export function DeepDuetWorkerTrailing({ store, t, useDeepduet, useSessions, sessionId }: RowTrailingProps) {
   const task = useDeepDuetSelector(store, s => s.bySessionId[sessionId], undefined, useDeepduet)
-  if (!task) return null
-  const view = getWorkerStatusView(task)
-  const badgeTone = task.needsDecision
-    ? styles.badgeDecision
-    : task.status === 'running'
-      ? styles.badgeRunning
-      : task.status === 'failed'
-        ? styles.badgeFailed
-        : ''
-  return (
-    <span className={`${styles.badge} ${badgeTone}`}>
-      {t(view.labelKey)}
-    </span>
-  )
+  const hasWorkers = useDeepDuetSelector(store, s => (s.byMasterId[sessionId]?.length ?? 0) > 0, undefined, useDeepduet)
+  const preset = typeof useSessions === 'function'
+    ? useSessions((state) => {
+      const value = state.byId[sessionId]?.projectionValues?.agentPreset
+      return typeof value === 'string' ? value : undefined
+    })
+    : undefined
+
+  if (task) {
+    const view = getWorkerStatusView(task)
+    const badgeTone = task.needsDecision
+      ? styles.badgeDecision
+      : task.status === 'running'
+        ? styles.badgeRunning
+        : task.status === 'failed'
+          ? styles.badgeFailed
+          : ''
+    return (
+      <span className={`${styles.badge} ${badgeTone}`}>
+        {t(view.labelKey)}
+      </span>
+    )
+  }
+
+  if (preset === 'deepduet' || hasWorkers) {
+    return (
+      <span className={`${styles.badge} ${styles.badgeMaster}`}>
+        {t('badge.master')}
+      </span>
+    )
+  }
+
+  return null
 }
 
 export function DeepDuetWorkerHover({ store, useDeepduet, sessionId }: RowHoverProps) {
