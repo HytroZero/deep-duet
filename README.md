@@ -4,7 +4,7 @@
 
 **单一心智，多座工作间 · 为 DeepSeek Harness 打造的极简多会话协作模式**
 
-[![DeepSeek Harness](https://img.shields.io/badge/DeepSeek%20Harness-%3E%3D0.2.1--rc.2%20%3C0.3.0-blue?style=flat-square)](https://deepseek-harness.github.io/deepseek-harness/reference/)
+[![DeepSeek Harness](https://img.shields.io/badge/DeepSeek%20Harness-%3E%3D0.2.2--rc.2%20%3C0.3.0--0-blue?style=flat-square)](https://deepseek-harness.github.io/deepseek-harness/reference/)
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D24.9.0-339933?style=flat-square)](https://nodejs.org/)
 [![Package](https://img.shields.io/badge/plugin-dsh--plugin--deepduet-111827?style=flat-square)](./package.json)
 
@@ -55,7 +55,7 @@ flowchart LR
 
 ### 环境要求
 
-- **DeepSeek Harness**：`>=0.2.1-rc.2 <0.3.0`
+- **DeepSeek Harness**：`>=0.2.2-rc.2 <0.3.0-0`
 - **Node.js**：`>=24.9.0`
 
 ### 构建与安装

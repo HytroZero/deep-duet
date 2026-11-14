@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { lstat, realpath, stat } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { join, normalize, resolve } from 'node:path'
 import { setTimeout } from 'node:timers/promises'
 import { createDigestQueue } from './digest.js'
 import type { DshHost } from './dsh.js'
@@ -105,7 +105,10 @@ async function removeWorktree(
   beforeRemove?: () => void,
 ) {
   const registration = await host.runGit(masterId, repoRoot, ['worktree', 'list', '--porcelain', '-z'])
-  const checkout = registration.split('\0\0').find(entry => entry.startsWith(`worktree ${path}\0`))
+  const checkout = registration.split('\0\0').find(entry => {
+    const [location = ''] = entry.split('\0', 1)
+    return location.startsWith('worktree ') && normalize(location.slice('worktree '.length)) === normalize(path)
+  })
   if (!checkout) {
     const entry = await lstat(path).catch((error: NodeJS.ErrnoException) => {
       if (error.code !== 'ENOENT') throw error
