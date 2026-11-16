@@ -1,12 +1,15 @@
 import { randomUUID } from 'node:crypto'
-import { lstat, realpath, stat } from 'node:fs/promises'
-import { join, normalize, resolve } from 'node:path'
+import { appendFile, lstat, mkdir, readFile, realpath, stat } from 'node:fs/promises'
+import { dirname, join, normalize, resolve } from 'node:path'
 import { setTimeout } from 'node:timers/promises'
 import { createDigestQueue } from './digest.js'
 import type { DshHost } from './dsh.js'
 import { openLedger } from './ledger.js'
+import { summarize } from './text.js'
 
 const MAX_TAIL = 20
+const MAX_GIT_STATUS_LINES = 200
+const STATE_EXCLUDE_PATTERN = '/.dsh/'
 
 export type TaskContext = { masterId: string; cwd: string }
 export type SpawnInput = { title: string; prompt: string; cwd?: string; isolateWorktree?: boolean }
@@ -50,11 +53,6 @@ function requireText(text: string, field: string) {
   if (!text.trim()) throw new TaskError('INVALID_ARGS', `${field} must not be empty`)
 }
 
-function summarize(text: string) {
-  const characters = Array.from(text)
-  return characters.length > 500 ? characters.slice(0, 499).join('') + '…' : text
-}
-
 function parseReply(reply: string) {
   const text = reply.trim()
   const lines = text.split(/\r?\n/)
@@ -85,6 +83,29 @@ async function resolveCwd(base: string, requested?: string) {
   }
 }
 
+function truncateLines(text: string, limit: number) {
+  const lines = text.split('\n')
+  if (lines.length <= limit) return text
+  return [...lines.slice(0, limit), `… (${lines.length - limit} more lines)`].join('\n')
+}
+
+/**
+ * Managed worktrees live under `<repo>/.dsh/`, so keep that directory out of the main checkout's
+ * status and `git add -A` through the repository-local exclude file (never the tracked .gitignore).
+ */
+async function excludeStateDirectory(repoRoot: string, host: DshHost, masterId: string) {
+  const commonDir = resolve(repoRoot, (await host.runGit(masterId, repoRoot, ['rev-parse', '--git-common-dir'])).trimEnd())
+  const file = join(commonDir, 'info', 'exclude')
+  const existing = await readFile(file, 'utf8').catch((error: NodeJS.ErrnoException) => {
+    if (error.code !== 'ENOENT') throw error
+    return ''
+  })
+  if (existing.split(/\r?\n/).some(line => line.trim() === STATE_EXCLUDE_PATTERN)) return
+  await mkdir(dirname(file), { recursive: true })
+  const separator = existing && !existing.endsWith('\n') ? '\n' : ''
+  await appendFile(file, `${separator}# DeepDuet worktrees and task state\n${STATE_EXCLUDE_PATTERN}\n`)
+}
+
 async function createWorktree(cwd: string, id: string, host: DshHost, masterId: string): Promise<NonNullable<TaskRecord['worktree']>> {
   let path: string | undefined
   try {
@@ -92,6 +113,7 @@ async function createWorktree(cwd: string, id: string, host: DshHost, masterId: 
     const repoRoot = await realpath(stdout.trimEnd())
     path = join(repoRoot, '.dsh', 'worktrees', id)
     const branch = `deepduet/${id}`
+    await excludeStateDirectory(repoRoot, host, masterId)
     await host.runGit(masterId, repoRoot, ['worktree', 'add', '-b', branch, '--', path])
     return { repoRoot, path, branch }
   } catch (cause) {
@@ -121,15 +143,21 @@ async function removeWorktree(
   await host.runGit(masterId, repoRoot, ['worktree', 'remove', '--', path], beforeRemove)
 }
 
+/** Undo a worktree created for a spawn that never started: drop the checkout and its unused branch. */
+async function discardWorktree(worktree: NonNullable<TaskRecord['worktree']>, host: DshHost, masterId: string) {
+  await removeWorktree(worktree, host, masterId)
+  await host.runGit(masterId, worktree.repoRoot, ['branch', '-D', '--', worktree.branch])
+}
+
 export type TaskManager = Awaited<ReturnType<typeof openTasks>>
 
 export async function openTasks(
-  projectRoot: string,
+  ledgerDirectory: string,
   host: DshHost,
   warn: (message: string) => void,
   onChange?: (record: TaskRecord) => void,
 ) {
-  const ledger = await openLedger(projectRoot)
+  const ledger = await openLedger(ledgerDirectory)
   async function save(record: TaskRecord) {
     await ledger.put(record)
     onChange?.(structuredClone(record))
@@ -158,8 +186,19 @@ export async function openTasks(
     })
   }
 
+  /** Persist a finished turn, release its run, and queue the Master notification. */
+  async function finish(run: Run, outcome: TaskRecord) {
+    await save(outcome)
+    if (runs.get(outcome.sessionId) === run) runs.delete(outcome.sessionId)
+    digests.enqueue({
+      masterId: outcome.masterId, sessionId: outcome.sessionId, title: outcome.title,
+      status: outcome.status === 'failed' ? 'failed' : 'idle', needsDecision: outcome.needsDecision,
+      decisionQuestion: outcome.decisionQuestion, summary: outcome.lastSummary ?? '',
+    })
+  }
+
   function start(record: TaskRecord, instruction: string) {
-    const { sessionId, masterId, title } = record
+    const { sessionId } = record
     const controller = new AbortController()
     const turn = Promise.resolve().then(() => {
       if (closing) controller.abort(new Error('DeepDuet unloaded'))
@@ -180,12 +219,7 @@ export async function openTasks(
         try {
           await mutate(sessionId, async () => {
             if (runs.get(sessionId) !== run || controller.signal.aborted || closing) return
-            await save(outcome)
-            runs.delete(sessionId)
-            digests.enqueue({
-              masterId, sessionId, title, status, needsDecision: result.needsDecision,
-              decisionQuestion: result.decisionQuestion, summary: result.lastSummary,
-            })
+            await finish(run, outcome)
           })
           return
         } catch (error) {
@@ -218,6 +252,9 @@ export async function openTasks(
 
     async spawn(ctx: TaskContext, input: SpawnInput) {
       checkOpen()
+      if (provisioning.has(ctx.masterId) || ledger.has(ctx.masterId)) {
+        throw new TaskError('MASTER_REQUIRED', 'Only a Master session can spawn DeepDuet workers')
+      }
       requireText(input.title, 'title')
       requireText(input.prompt, 'prompt')
       const sessionId = `session-${randomUUID()}`
@@ -236,7 +273,7 @@ export async function openTasks(
         } catch (cause) {
           try {
             await host.releaseWorker(sessionId)
-            if (worktree) await removeWorktree(worktree, host, ctx.masterId)
+            if (worktree) await discardWorktree(worktree, host, ctx.masterId)
           } catch (cleanup) {
             throw new TaskError('SPAWN_FAILED',
               `Could not start worker: ${String(cause)}. Cleanup failed; resources may remain at ${record.cwd}: ${String(cleanup)}`,
@@ -280,7 +317,7 @@ export async function openTasks(
       const limit = Math.min(MAX_TAIL, input.tailMessages ?? 5)
       const session = await host.readSession(task.sessionId, limit)
       const gitStatus = await host.runGit(ctx.masterId, session.cwd ?? task.cwd, ['status', '--short'])
-        .then(stdout => ({ text: stdout.trimEnd() }), () => ({ unavailable: true as const }))
+        .then(stdout => ({ text: truncateLines(stdout.trimEnd(), MAX_GIT_STATUS_LINES) }), () => ({ unavailable: true as const }))
       return { task, session, gitStatus }
     },
 
@@ -292,7 +329,14 @@ export async function openTasks(
           const run = runs.get(sessionId)
           if (run) {
             run.controller.abort(new Error('Stopped by Master'))
-            await run.turn.catch(() => {})
+            const reply = await run.turn.then(text => text, () => undefined)
+            if (reply !== undefined) {
+              // The turn finished before the abort landed; keep its real result instead of discarding it.
+              const outcome: TaskRecord = { ...record, ...parseReply(reply), status: 'idle', updatedAt: Date.now() }
+              if (!outcome.needsDecision) delete outcome.decisionQuestion
+              await finish(run, outcome)
+              return receipt(outcome)
+            }
             runs.delete(sessionId)
           } else {
             requireIdle(record)

@@ -24,8 +24,8 @@ function isRecord(value: unknown): value is TaskRecord {
       && isAbsolute(worktree.repoRoot) && worktree.path === value.cwd && typeof worktree.branch === 'string'))
 }
 
-export async function openLedger(projectRoot: string) {
-  const directory = join(projectRoot, '.dsh')
+/** Open the ledger stored as `deepduet-ledger.json` inside `directory`. */
+export async function openLedger(directory: string) {
   const path = join(directory, 'deepduet-ledger.json')
   let records = new Map<string, TaskRecord>()
 

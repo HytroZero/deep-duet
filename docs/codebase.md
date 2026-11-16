@@ -28,10 +28,11 @@ deep-duet/
 │   ├── tools.ts                  # Preset 作用域插件 (dsh-plugin-deepduet/tools)
 │   ├── tasks.ts                  # 后台任务核心模块：生命周期、状态机与 Worktree 管理
 │   ├── dsh.ts                    # DSH 宿主适配层：Worker 创建/恢复、Turn 事件追踪、沙箱 Git、Digest 投递
-│   ├── ledger.ts                 # 持久化账本模块 (.dsh/deepduet-ledger.json)：原子落盘与启动对账
+│   ├── ledger.ts                 # 持久化账本模块 (deepduet-ledger.json)：原子落盘与启动对账
 │   ├── digest.ts                 # 简报队列模块：按 Master 分桶、同任务去重、优先级排序、1.5s 合并投递
 │   ├── remote.ts                 # Typert 远程协议契约定义 (Zod schemas + invocation descriptors)
 │   ├── host-remote.ts            # Host 端 Typert RPC 与实时 Watch 流实现
+│   ├── text.ts                   # 共享文本工具：按码点安全截断摘要
 │   └── client/
 │       ├── index.tsx             # Web Client 插件入口：通过 ctx.slots.inject 挂载 UI 插槽与右侧栏 Tab
 │       ├── store.ts              # 基于 @deepseek-ai/dsh-client-store 的客户端状态与 $stream 订阅
@@ -69,7 +70,7 @@ flowchart TD
 | --- | --- | --- |
 | [`src/tasks.ts`](../src/tasks.ts) | `spawn / steer / inspect / manage / listTasks / listAllTasks / isWorker / close` | 任务归属校验、运行排他令牌、取消与过期结果拦截、`[NEED_DECISION]` 解析、Worktree 创建与安全清理、账本更新、简报入队与撤回 |
 | [`src/dsh.ts`](../src/dsh.ts) | `createWorker / runTurn / isBusy / releaseWorker / withIdleWorker / readSession / runGit / deliverDigest / close` | `SessionId` 品牌化、Worker `standard` 预设隔离、沙箱策略与审批策略继承、`session/event` 回合边界追踪、只读持久化打开、沙箱受限 Git 执行、零异步间隙 Digest 投递 |
-| [`src/ledger.ts`](../src/ledger.ts) | `openLedger(projectRoot)` -> `get / list / put / close` | JSON 结构校验、Promise 链串行化写入、临时文件 + `rename` 原子替换、深拷贝快照隔离、重启遗留 `running -> failed` 对账 |
+| [`src/ledger.ts`](../src/ledger.ts) | `openLedger(directory)` -> `get / list / put / close` | JSON 结构校验、Promise 链串行化写入、临时文件 + `rename` 原子替换、深拷贝快照隔离、重启遗留 `running -> failed` 对账 |
 | [`src/digest.ts`](../src/digest.ts) | `createDigestQueue(deliver, warn)` -> `enqueue / forget / close` | 按 `masterId` 独立建桶、同任务最新事件覆盖、`needsDecision` 置顶排序、1.5 秒合并窗口、投递失败指数退避重试 |
 | [`src/index.ts`](../src/index.ts) & [`src/tools.ts`](../src/tools.ts) | Host 插件入口与 `deepduet` Preset 工具入口 | `defineTool` 声明（含 `output`、`presentCall`、`presentResult`、`isConcurrencySafe`）、`when` 条件门禁、静态 `systemPrompt.section`、Typert 契约注册 |
 | [`src/client/*`](../src/client/index.tsx) | DSH Web Client 界面扩展 | 通过 `ctx.slots.inject` 绑定插槽生命周期、通过注册项 `inject` 提供 `hooks.deepduet`（由 Renderer 合成 `useDeepduet` Hook）与预绑定动作、右侧栏 Tab 与上下文菜单 |
@@ -110,7 +111,7 @@ export type ManageInput = {
 
 ## 5. 状态持久化与 DSH 合规边界
 
-1. **账本位置**：固定保存在项目根目录 `.dsh/deepduet-ledger.json`（格式版本 `version: 1`），不随 Worker 的子目录或 Worktree 变化而漂移。
+1. **账本位置**：默认保存在 `$DSH_HOME/deepduet/deepduet-ledger.json`，显式配置 `projectRoot` 时为 `<projectRoot>/.dsh/deepduet-ledger.json`（格式版本 `version: 1`），不随启动目录、Worker 子目录或 Worktree 变化而漂移。
 2. **预设与权限继承**：
    - 当宿主启用 `agentPresets` 且 Master 运行在 `deepduet` 预设时，`createWorker` 自动将 Worker 设为 `standard` 预设，使其作为标准编码会话运行，支持冷恢复与 Web GUI 直接接管。
    - Worker 创建时在 `setup` 中显式继承父会话的 `sandboxMode`（`setSandboxMode`）与 `approvalPolicy`（`setApprovalPolicy`）。

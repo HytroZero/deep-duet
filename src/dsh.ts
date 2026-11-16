@@ -16,8 +16,11 @@ import type {} from '@deepseek-ai/dsh-workspace'
 import { execFile } from 'node:child_process'
 import { isAbsolute, relative, sep } from 'node:path'
 import { promisify } from 'node:util'
+import { summarize } from './text.js'
 
 const exec = promisify(execFile)
+// Large checkouts can print megabytes of `git status`; callers truncate what they show.
+const GIT_MAX_BUFFER = 16 * 1024 * 1024
 const gitLocalEnvironment = [
   'GIT_DIR', 'GIT_WORK_TREE', 'GIT_COMMON_DIR', 'GIT_INDEX_FILE', 'GIT_OBJECT_DIRECTORY',
   'GIT_ALTERNATE_OBJECT_DIRECTORIES', 'GIT_CONFIG', 'GIT_CONFIG_PARAMETERS', 'GIT_CONFIG_COUNT',
@@ -66,7 +69,7 @@ function recentMessages(messages: Iterable<Message>, limit: number): SessionInsp
     if (message.role !== 'user' && message.role !== 'assistant') continue
     const text = textOf(message)
     if (!text) continue
-    result.push({ role: message.role, text: text.length > 500 ? text.slice(0, 499) + '…' : text })
+    result.push({ role: message.role, text: summarize(text) })
     if (result.length > limit) result.shift()
   }
   return result
@@ -123,8 +126,11 @@ export function createDshHost(ctx: Context): DshHost {
 
   return {
     async createWorker({ sessionId, masterId, cwd, title }) {
+      // A Master opened from storage (e.g. from the GUI after a restart) is loaded on demand.
       const parent = live(masterId)
+        ?? await resume(brandString<SessionId>(masterId), AbortSignal.timeout(15_000)).catch(() => undefined)
       if (!parent) throw new Error(`Master ${masterId} is unavailable`)
+      if (parent.session.header.origin === 'subagent') throw new Error('A subagent session cannot act as a DeepDuet Master')
       const id = brandString<SessionId>(sessionId)
       const parentPresets = parent.ctx.get('agentPresets') as (typeof parent.ctx extends never ? never : {
         composedPreset(ctx: unknown): string | undefined
@@ -310,7 +316,7 @@ export function createDshHost(ctx: Context): DshHost {
       for (const name of gitLocalEnvironment) delete env[name]
       beforeExec?.()
       const { stdout } = await exec(program, parameters, {
-        cwd, signal, maxBuffer: 128 * 1024,
+        cwd, signal, maxBuffer: GIT_MAX_BUFFER,
         env,
       })
       return stdout

@@ -1,12 +1,12 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { brandString } from '@deepseek-ai/dsh-brand'
 import { HarnessError } from '@deepseek-ai/dsh-error'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import { defineTool, ToolContextUnavailableError } from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-working-directory'
 import { realpath, stat } from 'node:fs/promises'
-import { isAbsolute } from 'node:path'
+import { homedir } from 'node:os'
+import { isAbsolute, join } from 'node:path'
 import { createDshHost } from './dsh.js'
 import { createDeepDuetRemoteHandlers, type DeepDuetRemoteHandlers } from './host-remote.js'
 import { createDeepDuetRemoteInfo } from './remote.js'
@@ -27,7 +27,18 @@ export const inject = [
 ]
 
 export interface Config {
+  /**
+   * Pin the task ledger to `<projectRoot>/.dsh/deepduet-ledger.json`. When omitted, the ledger lives in
+   * the DSH home (`$DSH_HOME/deepduet/`) so it follows the globally stored sessions regardless of
+   * which directory DSH was launched from.
+   */
   projectRoot?: string
+}
+
+/** Mirrors `@deepseek-ai/dsh-home-paths`: `$DSH_HOME`, else `~/.dsh`. */
+function dshHome() {
+  const configured = process.env.DSH_HOME
+  return configured && isAbsolute(configured) ? configured : join(homedir(), '.dsh')
 }
 
 export interface DeepDuetService {
@@ -122,6 +133,7 @@ export async function apply(ctx: Context, config: Config = {}) {
   if (!isAbsolute(configuredRoot)) throw new Error('DeepDuet projectRoot must be an absolute path')
   const projectRoot = await realpath(configuredRoot)
   if (!(await stat(projectRoot)).isDirectory()) throw new Error('DeepDuet projectRoot must be a directory')
+  const ledgerDirectory = config.projectRoot === undefined ? join(dshHome(), 'deepduet') : join(projectRoot, '.dsh')
 
   const warn = (message: string) => ctx.logger.warn(message)
   const host = createDshHost(ctx)
@@ -132,7 +144,7 @@ export async function apply(ctx: Context, config: Config = {}) {
     projectRoot,
     getTasks: () => tasks,
   })
-  tasks = await openTasks(projectRoot, host, warn, () => remoteHandlers.notifyWatchers())
+  tasks = await openTasks(ledgerDirectory, host, warn, () => remoteHandlers.notifyWatchers())
 
   ctx.effect(() => async () => {
     await tasks.close()
@@ -323,7 +335,4 @@ export async function apply(ctx: Context, config: Config = {}) {
   if (ctx.get('agentPresets') === undefined) {
     registerMasterSurface(ctx)
   }
-
-  // Keep reference to brandString import clean for downstream usage if needed.
-  void brandString
 }

@@ -96,14 +96,16 @@ export function DeepDuetSidebarTab({
   }, [currentTask?.sessionId])
 
   useEffect(() => {
-    if (!selectedTask) return
-    if (inspections[selectedTask.sessionId] || inspectLoading[selectedTask.sessionId]) return
+    if (!selectedTask || inspectLoading[selectedTask.sessionId]) return
+    // Re-inspect whenever the ledger record moves past the cached snapshot (e.g. a Worker finished in the background).
+    const cached = inspections[selectedTask.sessionId]
+    if (cached && cached.task.updatedAt >= selectedTask.updatedAt) return
     void store.inspect({
       masterId: selectedTask.masterId,
       sessionId: selectedTask.sessionId,
       tailMessages: 8,
     }).catch(() => {})
-  }, [selectedTask?.sessionId])
+  }, [selectedTask?.sessionId, selectedTask?.updatedAt])
 
   const inspected = selectedTask ? inspections[selectedTask.sessionId] : undefined
   const isInspecting = selectedTask ? Boolean(inspectLoading[selectedTask.sessionId]) : false

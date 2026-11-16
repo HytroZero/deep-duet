@@ -11,7 +11,7 @@ import { eventually, fakeHost } from './support/fake-host.js'
 async function setup(t, warn = assert.fail) {
   const cwd = await realpath(await mkdtemp(join(tmpdir(), 'deepduet-tasks-')))
   const host = fakeHost()
-  const tasks = await openTasks(cwd, host, warn)
+  const tasks = await openTasks(join(cwd, '.dsh'), host, warn)
   t.after(async () => {
     await tasks.close()
     await rm(cwd, { force: true, recursive: true })
@@ -78,6 +78,36 @@ test('stop prevents late settlements and supports retry after execution failure'
   assert.equal((await tasks.steer(ctx, { sessionId, instruction: 'Retry' })).status, 'running')
 })
 
+test('stop keeps a result that finished before the abort landed', async t => {
+  const { ctx, tasks, host } = await setup(t)
+  const { sessionId } = await tasks.spawn(ctx, { title: 'Task', prompt: 'Start' })
+  host.turns.get(sessionId).resolve('Finished work')
+  const receipt = await tasks.manage(ctx, { sessionId, action: 'stop' })
+  assert.equal(receipt.status, 'idle')
+  await eventually(() => assert.match(host.digests[0]?.message ?? '', /Finished work/))
+  const { task } = await tasks.inspect(ctx, { sessionId })
+  assert.equal(task.lastSummary, 'Finished work')
+  assert.equal(host.digests.length, 1)
+})
+
+test('a Worker session cannot act as a Master', async t => {
+  const { ctx, tasks } = await setup(t)
+  const { sessionId } = await tasks.spawn(ctx, { title: 'Task', prompt: 'Start' })
+  await assert.rejects(tasks.spawn({ masterId: sessionId, cwd: ctx.cwd }, { title: 'Nested', prompt: 'Go' }), { code: 'MASTER_REQUIRED' })
+})
+
+test('a failed spawn removes its worktree and unused branch', async t => {
+  const { ctx, tasks, host } = await setup(t)
+  const git = (...args) => execFileSync('git', args, { cwd: ctx.cwd, encoding: 'utf8' }).trim()
+  git('init', '-q')
+  git('-c', 'user.name=Test', '-c', 'user.email=test@example.org', '-c', 'commit.gpgsign=false',
+    'commit', '--allow-empty', '-qm', 'initial')
+  host.createWorker = async () => { throw new Error('boom') }
+  await assert.rejects(tasks.spawn(ctx, { title: 'Isolated', prompt: 'Edit', isolateWorktree: true }), { code: 'SPAWN_FAILED' })
+  assert.equal(git('branch', '--list', 'deepduet/*'), '')
+  assert.equal(git('worktree', 'list').split('\n').length, 1)
+})
+
 test('creates a real worktree and retains dirty files on a refused removal', async t => {
   const { ctx, tasks, host } = await setup(t)
   const git = (...args) => execFileSync('git', args, { cwd: ctx.cwd, encoding: 'utf8' }).trim()
@@ -87,6 +117,9 @@ test('creates a real worktree and retains dirty files on a refused removal', asy
   const task = await tasks.spawn(ctx, { title: 'Isolated', prompt: 'Edit', isolateWorktree: true })
   const { sessionId, cwd } = task
   assert.equal(cwd, join(ctx.cwd, '.dsh', 'worktrees', sessionId))
+  // The managed worktree and ledger under .dsh/ must stay invisible to the main checkout.
+  assert.equal(git('status', '--porcelain'), '')
+  assert.match(await readFile(join(ctx.cwd, '.git', 'info', 'exclude'), 'utf8'), /^\/\.dsh\/$/m)
   await tasks.manage(ctx, { sessionId, action: 'stop' })
   const changed = join(cwd, 'keep.txt')
   await writeFile(changed, 'pending')

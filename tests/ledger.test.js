@@ -8,7 +8,7 @@ import { openLedger } from '../dist/ledger.js'
 test('concurrent puts persist snapshots and recovery preserves finished results', async t => {
   const root = await mkdtemp(join(tmpdir(), 'deepduet-ledger-'))
   t.after(() => rm(root, { recursive: true, force: true }))
-  const ledger = await openLedger(root)
+  const ledger = await openLedger(join(root, '.dsh'))
   const task = {
     masterId: 'master', sessionId: 'a', title: 'A', goal: 'do A', cwd: root,
     status: 'running', needsDecision: false, createdAt: 1, updatedAt: 1,
@@ -19,7 +19,7 @@ test('concurrent puts persist snapshots and recovery preserves finished results'
   ])
   ledger.get('b').lastSummary = 'tampered'
   await ledger.close()
-  const reopened = await openLedger(root)
+  const reopened = await openLedger(join(root, '.dsh'))
   assert.equal(reopened.get('a').status, 'failed')
   assert.equal(reopened.get('a').lastSummary, 'Interrupted by process restart')
   assert.equal(reopened.get('b').lastSummary, 'Finished')
@@ -33,6 +33,6 @@ test('a corrupt or unsupported ledger is preserved', async t => {
   const path = join(root, '.dsh', 'deepduet-ledger.json')
   const original = '{"version":2}'
   await writeFile(path, original)
-  await assert.rejects(openLedger(root), /Cannot read DeepDuet ledger/)
+  await assert.rejects(openLedger(join(root, '.dsh')), /Cannot read DeepDuet ledger/)
   assert.equal(await readFile(path, 'utf8'), original)
 })

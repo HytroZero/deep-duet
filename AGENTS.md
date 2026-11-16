@@ -21,7 +21,7 @@
 - **KV Cache 稳定性**：`MASTER_PROMPT` 与 `WORKER_PROMPT` 保持静态字符串且 `interpolate: false`；工具门禁 `when: ({ agent }) => isMaster(agent)` 在会话期恒定；动态任务状态仅通过空闲门禁的 `[Background Digest]`（`master.followup`）或 `session_inspect` 进入对话。
 
 ### 状态持久化、沙箱与命名
-- **账本与 Worktree**：`.dsh/deepduet-ledger.json` 固定保存在项目根目录，由 `src/ledger.ts` 串行化原子落盘；所有 Git 操作通过 `DshHost.runGit` 执行，在非 `danger-full-access` 模式下走 `ctx.sandbox.confine` 并剥离局部 `GIT_*` 环境变量；清理 Worktree 前必须经过 `agent.runMaintenance` 与 Git 注册校验。
+- **账本与 Worktree**：账本默认保存在 `$DSH_HOME/deepduet/deepduet-ledger.json`（与全局会话存储同处，不随启动目录变化），显式配置 `projectRoot` 时改为 `<projectRoot>/.dsh/deepduet-ledger.json`，由 `src/ledger.ts` 串行化原子落盘；创建受管 Worktree 前会把 `/.dsh/` 写入仓库的 `.git/info/exclude`；所有 Git 操作通过 `DshHost.runGit` 执行，在非 `danger-full-access` 模式下走 `ctx.sandbox.confine` 并剥离局部 `GIT_*` 环境变量；清理 Worktree 前必须经过 `agent.runMaintenance` 与 Git 注册校验。
 - **命名一致性**：全仓库统一使用 `DeepDuet` / `deepduet` / `dsh-plugin-deepduet` 命名（`tests/deepduet-mode.test.js` 对此有自动校验）。
 
 ## 验证标准
