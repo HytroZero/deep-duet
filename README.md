@@ -80,7 +80,7 @@ cd /path/to/your/project
 dsh web
 ```
 
-任务账本默认保存在项目根目录 `.dsh/deepduet-ledger.json`。如需显式指定工程根目录，可在 Profile 补丁中配置：
+任务账本默认保存在 DSH 主目录 `$DSH_HOME/deepduet/deepduet-ledger.json`（未设置 `DSH_HOME` 时为 `~/.dsh`），与全局会话存储放在一起，因此无论从哪个目录启动 `dsh web` 都能看到同一批任务。如需把账本固定在某个工程的 `.dsh/deepduet-ledger.json`，可在 Profile 补丁中配置：
 
 ```yaml
 - id: deepduet
@@ -99,8 +99,9 @@ dsh web
 <details>
 <summary>当前版本已知边界</summary>
 
-- **单进程账本写入**：任务账本由当前宿主进程串行原子落盘，暂不协调多个独立进程同时写入同一项目的 `.dsh/deepduet-ledger.json`。
+- **单进程账本写入**：任务账本由当前宿主进程串行原子落盘，暂不协调多个独立进程同时写入同一份账本。
 - **异常重启恢复**：已完成的 Worker 结果会在通知前先落盘；若宿主进程意外中断，残留的运行中任务会在重启后标记为失败，可通过面板或让 Master 重新检查后恢复。
+- **仓库内状态目录**：隔离 Worktree 位于 `<仓库>/.dsh/worktrees/<sessionId>`，DeepDuet 会自动把 `/.dsh/` 加入该仓库的 `.git/info/exclude`（不改动受版本控制的 `.gitignore`），避免误提交嵌套 Worktree。
 - **显式分支合并**：清理已隔离的工作树目录时会保留对应分支，分支的最终合并或删除由你或 Master 显式决定。
 
 </details>

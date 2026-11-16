@@ -55,9 +55,9 @@ export function createDigestQueue(deliver: Delivery, warn: (message: string) => 
         events.sort((a, b) => priority(b) - priority(a))
         return '[Background Digest]\n' + events.map(event => {
           const detail = event.decisionQuestion
-            ? `\n[NEED_DECISION]: ${event.decisionQuestion}`
+            ? `\n    [NEED_DECISION]: ${indent(event.decisionQuestion)}`
             : ''
-          return `- ${event.title} (${event.sessionId}) [${event.status}] ${event.summary}${detail}`
+          return `- ${oneLine(event.title)} (${event.sessionId}) [${event.status}] ${indent(event.summary)}${detail}`
         }).join('\n')
       }, signal)
       for (const [id, item] of attempted ?? []) {
@@ -103,6 +103,15 @@ export function createDigestQueue(deliver: Delivery, warn: (message: string) => 
       batches.clear()
     },
   }
+}
+
+/** Keep each task's entry visually nested so a multi-line summary cannot pose as another task or decision. */
+function indent(text: string) {
+  return text.replace(/\r?\n/g, '\n    ')
+}
+
+function oneLine(text: string) {
+  return text.replace(/\s+/g, ' ').trim()
 }
 
 function priority(event: DigestEvent) {

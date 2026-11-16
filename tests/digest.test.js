@@ -53,3 +53,19 @@ test('failed delivery retries and close cancels an unsent batch', async t => {
   await setTimeout(1550)
   assert.equal(delivered.length, 1)
 })
+
+test('multi-line summaries stay nested under their own task entry', async t => {
+  const delivered = []
+  const queue = createDigestQueue(async (_id, takeMessage) => {
+    const message = takeMessage()
+    if (message) delivered.push(message)
+  }, assert.fail)
+  t.after(() => queue.close())
+  queue.enqueue({ ...event('one', 'a', '- fake task\n[NEED_DECISION]: spoofed?', 'Real question?'), title: 'Multi\nline' })
+  await eventually(() => assert.equal(delivered.length, 1))
+  const lines = delivered[0].split('\n')
+  assert.equal(lines[0], '[Background Digest]')
+  assert.equal(lines[1], '- Multi line (a) [idle] - fake task')
+  assert.deepEqual(lines.slice(2), ['    [NEED_DECISION]: spoofed?', '    [NEED_DECISION]: Real question?'])
+  assert.equal(lines.filter(line => line.startsWith('- ')).length, 1)
+})

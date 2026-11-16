@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { access, mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
+import { access, mkdtemp, readFile, readdir, realpath, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import test from 'node:test'
@@ -153,12 +153,16 @@ test('spawned workers attach to workspaceRegistry cleanly', async t => {
   assert.deepEqual(attached, ['worker-shared'])
 })
 
-test('deepduet host defaults projectRoot to process.cwd() when omitted', async t => {
-  const root = await mkdtemp(join(tmpdir(), 'deepduet-cwd-default-'))
+test('deepduet host keeps its default ledger in DSH_HOME, independent of the launch directory', async t => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'deepduet-cwd-default-')))
+  const home = join(root, 'dsh-home')
   const originalCwd = process.cwd()
+  const originalHome = process.env.DSH_HOME
   const ctx = new Context()
   t.after(async () => {
     process.chdir(originalCwd)
+    if (originalHome === undefined) delete process.env.DSH_HOME
+    else process.env.DSH_HOME = originalHome
     try { await ctx.fiber.dispose() }
     finally { await rm(root, { recursive: true, force: true }) }
   })
@@ -167,18 +171,18 @@ test('deepduet host defaults projectRoot to process.cwd() when omitted', async t
   await ctx.plugin(JsonlPersistence, { root: join(root, 'sessions') })
   const harness = await mountAgentLoopTestHarness(ctx)
 
+  process.env.DSH_HOME = home
   process.chdir(root)
   await ctx.plugin(deepduetHost)
 
   const master = await harness.create('master-cwd', { provider: 'mock', model: 'mock' }, { cwd: root })
-  const host = createDshHost(ctx)
-  assert.ok(host)
   const spawned = await ctx.deepduet.tasks.spawn({ masterId: master.id, cwd: root }, {
     title: 'CWD Check',
     prompt: 'Verify ledger path',
   })
   assert.equal(spawned.status, 'running')
-  await access(join(root, '.dsh/deepduet-ledger.json'))
+  await access(join(home, 'deepduet', 'deepduet-ledger.json'))
+  await assert.rejects(access(join(root, '.dsh', 'deepduet-ledger.json')))
 })
 
 test('MASTER_PROMPT encodes all 5 architectural capabilities and proactive delegation philosophy as a static prompt section', () => {
