@@ -134,6 +134,40 @@
   font-size: 12.5px;
 }
 
+.workerBanner {
+  /* Match the host input card, including the clearance on narrow panes. */
+  padding-inline: var(--dsh-composer-side-clearance);
+  align-items: center;
+}
+
+.workerBanner > .dockCard {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: var(--dsh-composer-card-max-width);
+}
+
+.workerBannerHeader,
+.actionRow.workerBannerActions {
+  flex-wrap: nowrap;
+}
+
+.workerBannerTitle {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  flex: 1 0 min-content;
+}
+
+.workerBannerActions,
+.workerBannerActions > button {
+  min-width: 0;
+}
+
+.ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .dockQuestion {
   margin: 0;
   line-height: 1.45;
@@ -158,15 +192,6 @@
   background: var(--dsw-bg-canvas, transparent);
   color: var(--dsw-text-primary, inherit);
   font-size: 12.5px;
-}
-
-.dockMeta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  font-size: 12px;
-  color: var(--dsw-text-secondary, rgba(128, 128, 128, 0.9));
 }
 
 .dockError {

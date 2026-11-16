@@ -241,18 +241,22 @@ export function DeepDuetInputDock({
 
   if (asWorker) {
     const view = getWorkerStatusView(asWorker)
+    const bannerText = [t('dock.workerBanner', { title: asWorker.title })]
+    if (asWorker.worktree) bannerText.push(t('dock.workerWorktree', { branch: asWorker.worktree.branch }))
+    if (asWorker.decisionQuestion) bannerText.push(asWorker.decisionQuestion)
+    const bannerLabel = bannerText.join(' · ')
     return (
-      <div className={styles.dockStack}>
+      <div className={`${styles.dockStack} ${styles.workerBanner}`}>
         <div className={styles.dockCard}>
-          <div className={styles.dockHeader}>
-            <div className={styles.dockTitle}>
+          <div className={`${styles.dockHeader} ${styles.workerBannerHeader}`}>
+            <div className={`${styles.dockTitle} ${styles.workerBannerTitle}`}>
               <StateDot state={view.dot} />
-              <span>{t('dock.workerBanner', { title: asWorker.title })}</span>
+              <span className={styles.ellipsis} title={bannerLabel}>{bannerLabel}</span>
               <Tag tone={view.tone}>{t(view.labelKey)}</Tag>
             </div>
-            <div className={styles.actionRow}>
+            <div className={`${styles.actionRow} ${styles.workerBannerActions}`}>
               <Button variant="ghost" size="sm" onClick={() => openOrchestrator(asWorker.sessionId)}>
-                {t('header.openOrchestrator')}
+                <span className={styles.ellipsis}>{t('header.openOrchestrator')}</span>
               </Button>
               {asWorker.status === 'running' && (
                 <Button
@@ -267,26 +271,14 @@ export function DeepDuetInputDock({
                     }).catch(() => {})
                   }}
                 >
-                  {t('dock.stopTurn')}
+                  <span className={styles.ellipsis}>{t('dock.stopTurn')}</span>
                 </Button>
               )}
               <Button variant="outline" size="sm" onClick={() => openSession(asWorker.masterId)}>
-                {t('header.backToMaster')}
+                <span className={styles.ellipsis}>{t('header.backToMaster')}</span>
               </Button>
             </div>
           </div>
-          {(asWorker.worktree || asWorker.decisionQuestion) && (
-            <div className={styles.dockMeta}>
-              {asWorker.worktree && (
-                <span className={styles.monoText}>
-                  {t('dock.workerWorktree', { branch: asWorker.worktree.branch })}
-                </span>
-              )}
-              {asWorker.decisionQuestion && (
-                <span>{asWorker.decisionQuestion}</span>
-              )}
-            </div>
-          )}
         </div>
       </div>
     )
