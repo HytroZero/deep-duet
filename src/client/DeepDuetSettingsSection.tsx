@@ -2,9 +2,10 @@ import { Button, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-store'
 import type { PropsRuntime, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import { useEffect, useState } from 'react'
+import type { EngineConfigControl } from '../external-cli-contract'
 import type { AgentRoleProfile, DeepDuetEngineSettings, EngineDescriptor } from '../remote'
 import styles from './DeepDuetWorker.module.css'
-import type { NS } from './locales'
+import { zh, type DeepDuetLocaleKey, type NS } from './locales'
 import { SelectMenu } from './SelectMenu'
 import { useDeepDuetSelector, type DeepDuetClientStore, type DeepDuetStoreState } from './store'
 
@@ -15,6 +16,50 @@ export interface DeepDuetSettingsInjected {
 }
 
 type DeepDuetSettingsProps = PropsRuntime<'settings.section'> & DeepDuetSettingsInjected
+
+const FALLBACK_NATIVE_CONTROLS: readonly EngineConfigControl[] = [
+  {
+    id: 'sandboxMode',
+    label: 'Permission Mode',
+    labelKey: 'settings.permission',
+    defaultValue: 'workspace-write',
+    options: [
+      { value: 'read-only', label: 'View Only', labelKey: 'settings.nativePermission.readOnly' },
+      { value: 'workspace-write', label: 'Workspace Write', labelKey: 'settings.nativePermission.workspaceWrite' },
+      { value: 'danger-full-access', label: 'Full Access', labelKey: 'settings.nativePermission.dangerFullAccess' },
+    ],
+  },
+]
+
+function resolveControlLabel(t: TranslateNS<typeof NS>, fallbackLabel: string, labelKey?: string): string {
+  if (labelKey && Object.hasOwn(zh, labelKey)) {
+    return t(labelKey as DeepDuetLocaleKey)
+  }
+  return fallbackLabel
+}
+
+function readControlValue(profile: AgentRoleProfile, control: EngineConfigControl): string {
+  const fallback = control.defaultValue ?? control.options[0]?.value ?? ''
+  if (control.id === 'sandboxMode') return profile.sandboxMode ?? fallback
+  if (control.id === 'approvalPolicy') return profile.approvalPolicy ?? fallback
+  return profile.engineOptions?.[control.id] ?? fallback
+}
+
+function applyControlValue(profile: AgentRoleProfile, controlId: string, value: string): AgentRoleProfile {
+  if (controlId === 'sandboxMode') {
+    return { ...profile, sandboxMode: value as AgentRoleProfile['sandboxMode'] }
+  }
+  if (controlId === 'approvalPolicy') {
+    return { ...profile, approvalPolicy: value as AgentRoleProfile['approvalPolicy'] }
+  }
+  return {
+    ...profile,
+    engineOptions: {
+      ...(profile.engineOptions ?? {}),
+      [controlId]: value,
+    },
+  }
+}
 
 function modelOptionKey(model: { id: string; provider?: string }): string {
   return `${model.provider ?? ''}::${model.id}`
@@ -40,8 +85,7 @@ function RoleProfileCard({
   const selectedModel = models.find(m => m.id === profile.model && (!profile.provider || !m.provider || m.provider === profile.provider))
     ?? models.find(m => m.id === profile.model)
   const efforts = selectedModel?.reasoningEfforts ?? []
-  const sandboxes = selectedEngine?.supportedSandboxes ?? ['read-only', 'workspace-write', 'danger-full-access']
-  const approvals = selectedEngine?.supportedApprovals ?? ['on-request', 'never']
+  const controls = selectedEngine?.controls ?? FALLBACK_NATIVE_CONTROLS
 
   const isUnhealthyExternal = selectedEngine?.kind === 'external'
     && (!selectedEngine.health.available || !selectedEngine.health.authenticated)
@@ -69,24 +113,6 @@ function RoleProfileCard({
       ? [{ value: profile.reasoningEffort, label: profile.reasoningEffort }]
       : []),
   ]
-
-  const sandboxOptions = sandboxes.map(sb => ({
-    value: sb,
-    label: sb === 'read-only'
-      ? t('settings.sandbox.readOnly')
-      : sb === 'danger-full-access'
-        ? t('settings.sandbox.dangerFullAccess')
-        : t('settings.sandbox.workspaceWrite'),
-  }))
-
-  const approvalOptions = approvals.map(ap => ({
-    value: ap,
-    label: ap === 'untrusted'
-      ? t('settings.approval.untrusted')
-      : ap === 'never'
-        ? t('settings.approval.never')
-        : t('settings.approval.onRequest'),
-  }))
 
   return (
     <div className={styles.settingsCard}>
@@ -117,7 +143,8 @@ function RoleProfileCard({
                 ? (role === 'master' ? 'deepduet' : 'standard')
                 : (nextEngine?.presetId ?? nextEngineId)
               const firstModel = nextEngine?.models[0]
-              onChange({
+              const nextControls = nextEngine?.controls ?? FALLBACK_NATIVE_CONTROLS
+              let nextProfile: AgentRoleProfile = {
                 engine: nextEngineId,
                 presetId: nextPresetId,
                 ...(nextEngineId === 'native'
@@ -127,11 +154,20 @@ function RoleProfileCard({
                       ...(firstModel ? { model: firstModel.id } : {}),
                       ...(firstModel?.defaultReasoningEffort ? { reasoningEffort: firstModel.defaultReasoningEffort } : {}),
                     }),
-                sandboxMode: profile.sandboxMode ?? 'workspace-write',
-                approvalPolicy: nextEngine?.supportedApprovals.includes(profile.approvalPolicy ?? 'on-request')
-                  ? (profile.approvalPolicy ?? 'on-request')
-                  : (nextEngine?.supportedApprovals[0] ?? 'on-request'),
-              })
+              }
+              for (const ctrl of nextControls) {
+                const candidate = readControlValue(
+                  ctrl.id === 'sandboxMode' || ctrl.id === 'approvalPolicy' ? profile : { ...profile, engineOptions: undefined },
+                  ctrl,
+                )
+                const resolved = ctrl.options.some(opt => opt.value === candidate)
+                  ? candidate
+                  : (ctrl.defaultValue ?? ctrl.options[0]?.value)
+                if (resolved !== undefined) {
+                  nextProfile = applyControlValue(nextProfile, ctrl.id, resolved)
+                }
+              }
+              onChange(nextProfile)
             }}
           />
         </div>
@@ -185,29 +221,19 @@ function RoleProfileCard({
           />
         </div>
 
-        <div className={styles.fieldLabel}>
-          <span>{t('settings.sandbox')}</span>
-          <SelectMenu
-            value={profile.sandboxMode ?? 'workspace-write'}
-            options={sandboxOptions}
-            onChange={val => onChange({
-              ...profile,
-              sandboxMode: val as AgentRoleProfile['sandboxMode'],
-            })}
-          />
-        </div>
-
-        <div className={styles.fieldLabel}>
-          <span>{t('settings.approval')}</span>
-          <SelectMenu
-            value={profile.approvalPolicy ?? 'on-request'}
-            options={approvalOptions}
-            onChange={val => onChange({
-              ...profile,
-              approvalPolicy: val as AgentRoleProfile['approvalPolicy'],
-            })}
-          />
-        </div>
+        {controls.map(control => (
+          <div key={control.id} className={styles.fieldLabel}>
+            <span>{resolveControlLabel(t, control.label, control.labelKey)}</span>
+            <SelectMenu
+              value={readControlValue(profile, control)}
+              options={control.options.map(opt => ({
+                value: opt.value,
+                label: resolveControlLabel(t, opt.label, opt.labelKey),
+              }))}
+              onChange={val => onChange(applyControlValue(profile, control.id, val))}
+            />
+          </div>
+        ))}
       </div>
     </div>
   )

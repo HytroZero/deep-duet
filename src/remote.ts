@@ -1,6 +1,7 @@
 import { createTypertRemoteInfo } from '@deepseek-ai/dsh-typert-protocol/remote-info'
 import type { z as ZodNamespace } from 'zod'
 import type {
+  EngineConfigControl,
   ExternalCliApprovalPolicy,
   ExternalCliHealth,
   ExternalCliModelInfo,
@@ -15,6 +16,7 @@ export type AgentRoleProfile = {
   reasoningEffort?: string
   sandboxMode?: ExternalCliSandboxMode
   approvalPolicy?: ExternalCliApprovalPolicy
+  engineOptions?: Record<string, string>
 }
 
 export type DeepDuetEngineSettings = {
@@ -29,6 +31,7 @@ export type EngineDescriptor = {
   kind: 'native' | 'external'
   supportedSandboxes: readonly ExternalCliSandboxMode[]
   supportedApprovals: readonly ExternalCliApprovalPolicy[]
+  controls: readonly EngineConfigControl[]
   health: ExternalCliHealth
   models: Array<ExternalCliModelInfo & { provider?: string }>
 }
@@ -146,7 +149,7 @@ export interface DeepDuetInspectResult {
 
 export function createDeepDuetRemoteInfo(z: typeof ZodNamespace) {
   const sandboxSchema = z.enum(['read-only', 'workspace-write', 'danger-full-access'])
-  const approvalSchema = z.enum(['untrusted', 'on-request', 'never'])
+  const approvalSchema = z.enum(['untrusted', 'on-request', 'auto-review', 'never'])
 
   const profileSchema = z.object({
     engine: z.string(),
@@ -156,6 +159,7 @@ export function createDeepDuetRemoteInfo(z: typeof ZodNamespace) {
     reasoningEffort: z.string().optional(),
     sandboxMode: sandboxSchema.optional(),
     approvalPolicy: approvalSchema.optional(),
+    engineOptions: z.record(z.string(), z.string()).optional(),
   })
 
   const pendingApprovalSchema = z.object({
@@ -238,6 +242,20 @@ export function createDeepDuetRemoteInfo(z: typeof ZodNamespace) {
     workerDefault: profileSchema,
   })
 
+  const engineControlOptionSchema = z.object({
+    value: z.string(),
+    label: z.string(),
+    labelKey: z.string().optional(),
+  })
+
+  const engineControlSchema = z.object({
+    id: z.string(),
+    label: z.string(),
+    labelKey: z.string().optional(),
+    defaultValue: z.string().optional(),
+    options: z.array(engineControlOptionSchema),
+  })
+
   const engineDescriptorSchema = z.object({
     id: z.string(),
     presetId: z.string(),
@@ -245,6 +263,7 @@ export function createDeepDuetRemoteInfo(z: typeof ZodNamespace) {
     kind: z.enum(['native', 'external']),
     supportedSandboxes: z.array(sandboxSchema),
     supportedApprovals: z.array(approvalSchema),
+    controls: z.array(engineControlSchema),
     health: z.object({
       available: z.boolean(),
       binaryPath: z.string().optional(),

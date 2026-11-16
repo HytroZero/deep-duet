@@ -13,7 +13,6 @@ import { useEffect, useState, type FormEvent } from 'react'
 import type { TaskRecord } from '../remote'
 import styles from './DeepDuetWorker.module.css'
 import type { NS } from './locales'
-import { SelectMenu } from './SelectMenu'
 import { getWorkerStatusView } from './status'
 import { useDeepDuetSelector, type DeepDuetClientStore, type DeepDuetStoreState } from './store'
 
@@ -63,20 +62,12 @@ export function DeepDuetSidebarTab({
   const inspectLoading = useDeepDuetSelector(store, s => s.inspectLoading, undefined, useDeepduet)
   const pendingActions = useDeepDuetSelector(store, s => s.pendingActions, undefined, useDeepduet)
   const storeError = useDeepDuetSelector(store, s => s.error, undefined, useDeepduet)
-  const engines = useDeepDuetSelector(store, s => s.engines, undefined, useDeepduet)
-  const engineSettings = useDeepDuetSelector(store, s => s.engineSettings, undefined, useDeepduet)
 
   const [scope, setScope] = useState<'session' | 'all'>('session')
   const [showSpawn, setShowSpawn] = useState(false)
   const [spawnTitle, setSpawnTitle] = useState('')
   const [spawnPrompt, setSpawnPrompt] = useState('')
   const [spawnWorktree, setSpawnWorktree] = useState(false)
-  const [showOverride, setShowOverride] = useState(false)
-  const [overrideEngine, setOverrideEngine] = useState('')
-  const [overrideProvider, setOverrideProvider] = useState('')
-  const [overrideModel, setOverrideModel] = useState('')
-  const [overrideEffort, setOverrideEffort] = useState('')
-  const [overrideSandbox, setOverrideSandbox] = useState('')
   const [steerText, setSteerText] = useState('')
   const [confirmArchiveId, setConfirmArchiveId] = useState<string | undefined>(undefined)
 
@@ -119,12 +110,6 @@ export function DeepDuetSidebarTab({
   const inspected = selectedTask ? inspections[selectedTask.sessionId] : undefined
   const isInspecting = selectedTask ? Boolean(inspectLoading[selectedTask.sessionId]) : false
   const isSpawning = activeMasterId ? Boolean(pendingActions[`spawn:${activeMasterId}`]) : false
-  const activeOverrideEngine = overrideEngine || engineSettings.workerDefault.engine
-  const overrideEngineDesc = engines.find(e => e.id === activeOverrideEngine)
-  const overrideModels = overrideEngineDesc?.models ?? []
-  const overrideModelDesc = overrideModels.find(m => m.id === overrideModel && (!overrideProvider || !m.provider || m.provider === overrideProvider))
-    ?? overrideModels.find(m => m.id === overrideModel)
-  const overrideEfforts = overrideModelDesc?.reasoningEfforts ?? []
 
   async function handleSpawn(event: FormEvent) {
     event.preventDefault()
@@ -138,21 +123,10 @@ export function DeepDuetSidebarTab({
         title,
         prompt,
         ...(spawnWorktree && { isolateWorktree: true }),
-        ...(showOverride && overrideEngine ? { engine: overrideEngine } : {}),
-        ...(showOverride && overrideProvider ? { provider: overrideProvider } : {}),
-        ...(showOverride && overrideModel ? { model: overrideModel } : {}),
-        ...(showOverride && overrideEffort ? { reasoningEffort: overrideEffort } : {}),
-        ...(showOverride && overrideSandbox ? { sandboxMode: overrideSandbox as 'read-only' | 'workspace-write' | 'danger-full-access' } : {}),
       })
       setSpawnTitle('')
       setSpawnPrompt('')
       setSpawnWorktree(false)
-      setShowOverride(false)
-      setOverrideEngine('')
-      setOverrideProvider('')
-      setOverrideModel('')
-      setOverrideEffort('')
-      setOverrideSandbox('')
       setShowSpawn(false)
     } catch {
       // Error surfaced via store.error
@@ -309,92 +283,6 @@ export function DeepDuetSidebarTab({
                   />
                   <span>{t('spawn.worktreeLabel')}</span>
                 </label>
-                {engines.length > 0 && (
-                  <>
-                    <button
-                      type="button"
-                      className={styles.overrideToggle}
-                      onClick={() => setShowOverride(v => !v)}
-                    >
-                      <span>{showOverride ? '▾' : '▸'} {t('spawn.overrideToggle')}</span>
-                    </button>
-                    {showOverride && (
-                      <div className={styles.overrideBox}>
-                        <div className={styles.fieldLabel}>
-                          <span>{t('spawn.engine')}</span>
-                          <SelectMenu
-                            value={overrideEngine}
-                            options={[
-                              { value: '', label: `${t('spawn.useDefault')} (${engineSettings.workerDefault.engine})` },
-                              ...engines.map(eng => ({ value: eng.id, label: eng.label })),
-                            ]}
-                            onChange={(nextEngine) => {
-                              setOverrideEngine(nextEngine)
-                              setOverrideProvider('')
-                              setOverrideModel('')
-                              setOverrideEffort('')
-                            }}
-                          />
-                        </div>
-                        <div className={styles.fieldLabel}>
-                          <span>{t('spawn.model')}</span>
-                          <SelectMenu
-                            value={overrideModelDesc
-                              ? `${overrideModelDesc.provider ?? ''}::${overrideModelDesc.id}`
-                              : (overrideModel ? `${overrideProvider}::${overrideModel}` : '')}
-                            options={[
-                              { value: '', label: t('spawn.useDefault') },
-                              ...overrideModels.map(m => ({
-                                value: `${m.provider ?? ''}::${m.id}`,
-                                label: m.name,
-                              })),
-                            ]}
-                            onChange={(val) => {
-                              if (!val) {
-                                setOverrideProvider('')
-                                setOverrideModel('')
-                                setOverrideEffort('')
-                                return
-                              }
-                              const [prov, ...rest] = val.split('::')
-                              const modelId = rest.join('::')
-                              const matched = overrideModels.find(m => m.id === modelId && (!prov || m.provider === prov))
-                              setOverrideProvider(prov ?? '')
-                              setOverrideModel(modelId)
-                              setOverrideEffort(matched?.defaultReasoningEffort ?? '')
-                            }}
-                          />
-                        </div>
-                        {overrideEfforts.length > 0 && (
-                          <div className={styles.fieldLabel}>
-                            <span>{t('spawn.effort')}</span>
-                            <SelectMenu
-                              value={overrideEffort}
-                              options={[
-                                { value: '', label: t('spawn.useDefault') },
-                                ...overrideEfforts.map(eff => ({ value: eff.id, label: eff.name })),
-                              ]}
-                              onChange={setOverrideEffort}
-                            />
-                          </div>
-                        )}
-                        <div className={styles.fieldLabel}>
-                          <span>{t('spawn.sandbox')}</span>
-                          <SelectMenu
-                            value={overrideSandbox}
-                            options={[
-                              { value: '', label: t('spawn.useDefault') },
-                              { value: 'read-only', label: t('settings.sandbox.readOnly') },
-                              { value: 'workspace-write', label: t('settings.sandbox.workspaceWrite') },
-                              { value: 'danger-full-access', label: t('settings.sandbox.dangerFullAccess') },
-                            ]}
-                            onChange={setOverrideSandbox}
-                          />
-                        </div>
-                      </div>
-                    )}
-                  </>
-                )}
                 <div className={styles.actionRow}>
                   <Button variant="primary" size="sm" type="submit" disabled={isSpawning || !spawnTitle.trim() || !spawnPrompt.trim()}>
                     {isSpawning ? t('spawn.submitting') : t('spawn.submit')}

@@ -294,6 +294,7 @@ export function createDshHost(ctx: Context): DshHost {
             ...(profile?.reasoningEffort ? { reasoningEffort: profile.reasoningEffort } : {}),
             ...(profile?.sandboxMode ? { sandboxMode: profile.sandboxMode } : policy ? { sandboxMode: policy.mode } : {}),
             ...(profile?.approvalPolicy ? { approvalPolicy: profile.approvalPolicy } : {}),
+            ...(profile?.engineOptions ? { engineOptions: profile.engineOptions } : {}),
           })
         }
         await ctx.sessions.flush(session)
@@ -326,6 +327,7 @@ export function createDshHost(ctx: Context): DshHost {
             ...(profile.reasoningEffort ? { reasoningEffort: profile.reasoningEffort } : {}),
             ...(profile.sandboxMode ? { sandboxMode: profile.sandboxMode } : {}),
             ...(profile.approvalPolicy ? { approvalPolicy: profile.approvalPolicy } : {}),
+            ...(profile.engineOptions ? { engineOptions: profile.engineOptions } : {}),
           },
           signal,
           ...(options?.onApprovalRequest ? { onApprovalRequest: options.onApprovalRequest } : {}),

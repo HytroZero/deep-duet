@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
-import { chmod, copyFile, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
@@ -18,6 +18,7 @@ import Approval from '@deepseek-ai/dsh-user-approval'
 import * as deepduet from '../dist/index.js'
 import { startMasterMcpServer } from '../dist/master-mcp.js'
 import { eventually } from './support/fake-host.js'
+import * as mockExternalCli from './support/mock-external-cli.js'
 
 const execFileAsync = promisify(execFile)
 const textOf = message => message.content.map(b => b.type === 'text' ? b.text : '').join('')
@@ -71,13 +72,24 @@ test('deepduet works standalone, persists role profiles, and fails explicitly wh
   const enginesSnap = await ctx.deepduet.remoteEngines()
   assert.equal(enginesSnap.engines.length, 1)
   assert.equal(enginesSnap.engines[0]?.id, 'native')
+  assert.equal(enginesSnap.engines[0]?.controls.length, 1)
+  assert.equal(enginesSnap.engines[0]?.controls[0]?.id, 'sandboxMode')
+  assert.equal(enginesSnap.engines[0]?.controls[0]?.labelKey, 'settings.permission')
+  assert.deepEqual(
+    enginesSnap.engines[0]?.controls[0]?.options.map(o => o.labelKey),
+    [
+      'settings.nativePermission.readOnly',
+      'settings.nativePermission.workspaceWrite',
+      'settings.nativePermission.dangerFullAccess',
+    ],
+  )
 
   const saved = await ctx.deepduet.remoteSetSettings({
     master: { engine: 'native', presetId: 'deepduet' },
-    workerDefault: { engine: 'codex-portal', presetId: 'codex-portal', model: 'gpt-5.4' },
+    workerDefault: { engine: 'missing-cli', presetId: 'missing-cli', model: 'ext-pro' },
   })
-  assert.equal(saved.workerDefault.engine, 'codex-portal')
-  assert.equal(ctx.deepduet.remoteGetSettings().workerDefault.model, 'gpt-5.4')
+  assert.equal(saved.workerDefault.engine, 'missing-cli')
+  assert.equal(ctx.deepduet.remoteGetSettings().workerDefault.model, 'ext-pro')
 
   const master = await harness.create('master-1', { provider: 'mock', model: 'mock' }, { cwd: root })
   await assert.rejects(
@@ -86,8 +98,8 @@ test('deepduet works standalone, persists role profiles, and fails explicitly wh
   )
 })
 
-test('deepduet integrates with dsh-codex-portal for mixed Workers, worktrees, dual-channel approvals, and external Master MCP', { timeout: 25000 }, async t => {
-  const root = await realpath(await mkdtemp(join(tmpdir(), 'deepduet-codex-collab-')))
+test('deepduet integrates with ExternalCliEngine contract for mixed Workers, worktrees, dual-channel approvals, and external Master MCP', { timeout: 25000 }, async t => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'deepduet-ext-collab-')))
   const ctx = new Context()
   ctx.baseUrl = pathToFileURL(root).href + '/'
   t.after(async () => {
@@ -96,25 +108,6 @@ test('deepduet integrates with dsh-codex-portal for mixed Workers, worktrees, du
   })
 
   await initGitRepo(root)
-
-  // Stage mock codex CLI shim referencing dsh-codex-portal's mock script
-  const mockCliSrc = join(root, '..', '..', 'dsh-codex-portal', 'tests', 'support', 'mock-codex-cli.mjs')
-  const codexShimDir = join(root, 'bin')
-  await copyFile(
-    new URL('../../dsh-codex-portal/tests/support/mock-codex-cli.mjs', import.meta.url),
-    join(root, 'mock-codex-cli.mjs'),
-  )
-  let binPath
-  if (process.platform === 'win32') {
-    binPath = join(root, 'codex.cmd')
-    await writeFile(binPath, `@echo off\r\n"%dp0%\\mock-codex-cli.mjs" %*\r\n`, 'utf8')
-  } else {
-    binPath = join(root, 'codex')
-    await writeFile(binPath, `#!/usr/bin/env sh\nexec "${process.execPath}" "${join(root, 'mock-codex-cli.mjs')}" "$@"\n`, 'utf8')
-    await chmod(binPath, 0o755)
-  }
-  void mockCliSrc
-  void codexShimDir
 
   await ctx.plugin(Loader, { name: 'loader', root })
   await ctx.plugin(TypertRegistry)
@@ -126,8 +119,44 @@ test('deepduet integrates with dsh-codex-portal for mixed Workers, worktrees, du
   ctx.llm.registerAdapter(['mock'], new MockNativeLlm(input => `native:${input}`))
   await ctx.plugin(AgentPresetRegistry, { default: 'standard' })
 
-  const codexPlugin = await import('../../dsh-codex-portal/dist/index.js')
-  await ctx.plugin(codexPlugin, { binaryPath: binPath, configPath: join(root, 'codex-cfg.json') })
+  await ctx.plugin(mockExternalCli, {
+    id: 'mock-cli',
+    presetId: 'mock-cli',
+    label: 'MockCLI',
+    configControls: [
+      {
+        id: 'sandboxMode',
+        label: 'Sandbox Policy',
+        labelKey: 'settings.sandbox',
+        defaultValue: 'workspace-write',
+        options: [
+          { value: 'read-only', label: 'Read Only', labelKey: 'settings.sandbox.readOnly' },
+          { value: 'workspace-write', label: 'Workspace Write', labelKey: 'settings.sandbox.workspaceWrite' },
+          { value: 'danger-full-access', label: 'Full Access', labelKey: 'settings.sandbox.dangerFullAccess' },
+        ],
+      },
+      {
+        id: 'approvalPolicy',
+        label: 'Approval Policy',
+        labelKey: 'settings.approval',
+        defaultValue: 'on-request',
+        options: [
+          { value: 'on-request', label: 'On Request', labelKey: 'settings.approval.onRequest' },
+          { value: 'auto-review', label: 'Auto Review', labelKey: 'settings.approval.autoReview' },
+          { value: 'never', label: 'Never Ask', labelKey: 'settings.approval.never' },
+        ],
+      },
+      {
+        id: 'networkMode',
+        label: 'Network Access',
+        defaultValue: 'off',
+        options: [
+          { value: 'off', label: 'Offline' },
+          { value: 'on', label: 'Online' },
+        ],
+      },
+    ],
+  })
   await ctx.plugin(deepduet, { projectRoot: root })
 
   await ctx.agentPresets.register({ id: 'standard', name: 'Standard', plugins: [] })
@@ -137,20 +166,24 @@ test('deepduet integrates with dsh-codex-portal for mixed Workers, worktrees, du
     plugins: [{ name: new URL('../dist/tools.js', import.meta.url).href }],
   })
   await ctx.agentPresets.register({
-    id: 'codex-portal',
-    name: 'Codex Portal',
-    plugins: [{ name: new URL('../../dsh-codex-portal/dist/preset-runtime.js', import.meta.url).href }],
+    id: 'mock-cli',
+    name: 'Mock CLI',
+    plugins: [{ name: new URL('./support/mock-external-cli-preset.js', import.meta.url).href }],
   })
 
-  // 1) Engine discovery sees both native and codex-portal
+  // 1) Engine discovery sees both native (1 control) and external CLI engines (3 controls)
   const enginesSnap = await ctx.deepduet.remoteEngines()
-  const codexEng = enginesSnap.engines.find(e => e.id === 'codex-portal')
-  assert.ok(codexEng)
-  assert.equal(codexEng.health.available, true)
-  assert.equal(codexEng.health.authenticated, true)
-  assert.equal(codexEng.models.length, 2)
+  const nativeEng = enginesSnap.engines.find(e => e.id === 'native')
+  assert.equal(nativeEng?.controls.length, 1)
+  const extEng = enginesSnap.engines.find(e => e.id === 'mock-cli')
+  assert.ok(extEng)
+  assert.equal(extEng.health.available, true)
+  assert.equal(extEng.health.authenticated, true)
+  assert.equal(extEng.models.length, 2)
+  assert.equal(extEng.controls.length, 3)
+  assert.deepEqual(extEng.controls.map(c => c.id), ['sandboxMode', 'approvalPolicy', 'networkMode'])
 
-  // 2) Mixed mode: native Master spawns codex-portal Worker with isolated worktree + dual-channel approval
+  // 2) Mixed mode: native Master spawns external CLI Worker with isolated worktree + dual-channel approval
   const masterHandle = await ctx.agents.create({
     sessionId: 'master-mixed',
     meta: { cwd: root, agentPreset: 'deepduet' },
@@ -162,15 +195,19 @@ test('deepduet integrates with dsh-codex-portal for mixed Workers, worktrees, du
   const spawned = await ctx.deepduet.tasks.spawn(
     { masterId: masterHandle.agent.id, cwd: root },
     {
-      title: 'Codex Worker',
+      title: 'External Worker',
       prompt: 'NEED_APPROVAL',
       isolateWorktree: true,
-      engine: 'codex-portal',
-      model: 'gpt-5.4',
+      engine: 'mock-cli',
+      model: 'ext-pro',
       reasoningEffort: 'high',
       sandboxMode: 'workspace-write',
     },
   )
+
+  const workerAgent = ctx.agents.get(spawned.sessionId)
+  assert.ok(workerAgent)
+  assert.equal(workerAgent.session.header.agentPreset, 'mock-cli')
 
   // Wait for pendingApproval to surface on the TaskRecord, then approve via Master/Input Dock channel
   let pendingReqId
@@ -178,8 +215,8 @@ test('deepduet integrates with dsh-codex-portal for mixed Workers, worktrees, du
     const task = ctx.deepduet.tasks.listTasks(masterHandle.agent.id).find(item => item.sessionId === spawned.sessionId)
     assert.ok(task?.pendingApproval)
     assert.equal(task.needsDecision, true)
-    assert.equal(task.profile?.engine, 'codex-portal')
-    assert.equal(task.profile?.model, 'gpt-5.4')
+    assert.equal(task.profile?.engine, 'mock-cli')
+    assert.equal(task.profile?.model, 'ext-pro')
     pendingReqId = task.pendingApproval.requestId
   })
 
@@ -200,25 +237,34 @@ test('deepduet integrates with dsh-codex-portal for mixed Workers, worktrees, du
 
   // 3) External CLI Master MCP server & external Master turn routing
   await ctx.deepduet.remoteSetSettings({
-    master: { engine: 'codex-portal', presetId: 'deepduet', model: 'gpt-5.4', sandboxMode: 'workspace-write', approvalPolicy: 'on-request' },
+    master: {
+      engine: 'mock-cli',
+      presetId: 'deepduet',
+      model: 'ext-pro',
+      sandboxMode: 'workspace-write',
+      approvalPolicy: 'auto-review',
+      engineOptions: { networkMode: 'on' },
+    },
     workerDefault: { engine: 'native', presetId: 'standard' },
   })
 
   const extMasterHandle = await ctx.agents.create({
-    sessionId: 'master-codex',
+    sessionId: 'master-ext',
     meta: { cwd: root, agentPreset: 'deepduet' },
     agentOptions: { provider: 'mock', model: 'mock' },
     setup: async ac => { await ctx.agentPresets.mount(ac, 'deepduet') },
   })
   t.after(() => extMasterHandle.dispose())
 
-  // Verify external Master was bound to codex-portal with MASTER_PROMPT & deepduet MCP server
-  const boundCfg = ctx.externalCliEngines?.get('codex-portal')?.getSessionConfig?.('master-codex')
+  // Verify external Master was bound to mock-cli with MASTER_PROMPT, deepduet MCP server, approvalPolicy & engineOptions
+  const boundCfg = ctx.externalCliEngines?.get('mock-cli')?.getSessionConfig?.('master-ext')
   assert.ok(boundCfg)
+  assert.equal(boundCfg.approvalPolicy, 'auto-review')
+  assert.deepEqual(boundCfg.engineOptions, { networkMode: 'on' })
   assert.match(boundCfg.developerInstructions ?? '', /DeepDuet Master Orchestration/)
   assert.ok(boundCfg.mcpServers?.deepduet)
 
-  // Verify Master turns route through codex-portal
+  // Verify Master turns route through mock-cli
   const masterTurnDone = new Promise((resolve) => {
     const off = ctx.on('session/event', (session, event) => {
       if (session === extMasterHandle.agent.session && event.type === 'turn/end') {
@@ -230,18 +276,18 @@ test('deepduet integrates with dsh-codex-portal for mixed Workers, worktrees, du
   extMasterHandle.agent.followup(userMsg('status check'))
   await masterTurnDone
   const masterMsgs = extMasterHandle.agent.session.deriveMessages()
-  assert.ok(masterMsgs.some(m => m.role === 'assistant' && textOf(m).includes('Codex(gpt-5.4): status check')))
+  assert.ok(masterMsgs.some(m => m.role === 'assistant' && textOf(m).includes('MockCLI(ext-pro): status check')))
 
   // 4) Direct Master MCP server protocol & token isolation test
   const mcpServer = await startMasterMcpServer(() => ctx.deepduet.tasks)
   t.after(() => mcpServer.close())
-  const mcpCfg = mcpServer.issueMasterConfig('master-codex', () => root)
+  const mcpCfg = mcpServer.issueMasterConfig('master-ext', () => root)
 
   // Reject unauthenticated caller
   const unauthRes = await fetch(mcpServer.url, { method: 'POST', body: '{}' })
   assert.equal(unauthRes.status, 401)
 
-  // List tools & invoke session_spawn as master-codex
+  // List tools & invoke session_spawn as master-ext
   const listRes = await fetch(mcpServer.url, {
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${mcpCfg.env.DEEPDUET_MCP_TOKEN}` },
@@ -264,7 +310,7 @@ test('deepduet integrates with dsh-codex-portal for mixed Workers, worktrees, du
   const spawnedReceipt = JSON.parse(callJson.result.content[0].text)
   assert.equal(spawnedReceipt.status, 'running')
   await eventually(() => {
-    const task = ctx.deepduet.tasks.listTasks('master-codex').find(item => item.sessionId === spawnedReceipt.sessionId)
+    const task = ctx.deepduet.tasks.listTasks('master-ext').find(item => item.sessionId === spawnedReceipt.sessionId)
     assert.equal(task?.status, 'idle')
     assert.equal(task?.lastSummary, 'native:via mcp')
   })

@@ -62,10 +62,10 @@ test('plugin bundle builds slim client extension and declarative patches without
   assert.doesNotMatch(presetPatch, /dsh-tool-subagent|dsh-tool-workflow|dsh-workflow-ptc|id:\s*delegation/)
 })
 
-test('package manifest exposes version 1.1.0 and DeepDuet localized plugin metadata', async () => {
+test('package manifest exposes version 1.2.1 and DeepDuet localized plugin metadata', async () => {
   const pkg = JSON.parse(await readFile(join(ROOT, 'package.json'), 'utf8'))
   assert.equal(pkg.name, 'dsh-plugin-deepduet')
-  assert.equal(pkg.version, '1.1.0')
+  assert.equal(pkg.version, '1.2.1')
   assert.equal(pkg.exports['./locale/*.json'], './locale/*.json')
   assert.equal(pkg.exports['./tools/locale/*.json'], './locale/tools/*.json')
   assert.ok(pkg.files.includes('locale/*.json'))

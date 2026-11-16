@@ -51,7 +51,7 @@ deep-duet/
     ├── tasks.test.js             # 任务核心闭环、故障恢复与真实 Git Worktree 测试
     ├── dsh.test.js               # 真实 DSH Agent Loop、原生审批、接管隔离与卸载测试
     ├── gui-remote.test.js        # Typert RPC/Watch 流、Preset 隔离与 dist/client.js 插槽加载测试
-    ├── external-cli-integration.test.js # 独立降级、codex-portal (dsh-codex-portal) 混合调度、双通道审批与 MCP Master 测试
+    ├── external-cli-integration.test.js # 独立降级、ExternalCliEngine 混合调度、双通道审批与 MCP Master 测试
     └── deepduet-mode.test.js     # Bundle 规范、Preset 作用域与 Workspace 挂载测试
 ```
 

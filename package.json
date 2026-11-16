@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-deepduet",
-  "version": "1.1.0",
+  "version": "1.2.1",
   "description": "DeepDuet multi-session collaborative coding mode for DeepSeek Harness",
   "license": "MIT",
   "type": "module",

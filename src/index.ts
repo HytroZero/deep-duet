@@ -169,6 +169,7 @@ export async function apply(ctx: Context, config: Config = {}) {
       ...(masterProfile.reasoningEffort ? { reasoningEffort: masterProfile.reasoningEffort } : {}),
       ...(masterProfile.sandboxMode ? { sandboxMode: masterProfile.sandboxMode } : {}),
       ...(masterProfile.approvalPolicy ? { approvalPolicy: masterProfile.approvalPolicy } : {}),
+      ...(masterProfile.engineOptions ? { engineOptions: masterProfile.engineOptions } : {}),
       developerInstructions: MASTER_PROMPT,
       mcpServers: { deepduet: mcpConfig },
     })

@@ -3,7 +3,9 @@ import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type {
+  EngineConfigControl,
   ExternalCliApprovalPolicy,
+  ExternalCliEngine,
   ExternalCliHealth,
   ExternalCliModelInfo,
   ExternalCliSandboxMode,
@@ -34,6 +36,88 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
 
+const SANDBOX_LABELS: Record<ExternalCliSandboxMode, { label: string; labelKey: string }> = {
+  'read-only': { label: 'Read Only (read-only)', labelKey: 'settings.sandbox.readOnly' },
+  'workspace-write': { label: 'Workspace Write (workspace-write)', labelKey: 'settings.sandbox.workspaceWrite' },
+  'danger-full-access': { label: 'Full Access (danger-full-access)', labelKey: 'settings.sandbox.dangerFullAccess' },
+}
+
+const APPROVAL_LABELS: Record<ExternalCliApprovalPolicy, { label: string; labelKey: string }> = {
+  'on-request': { label: 'On Request (on-request)', labelKey: 'settings.approval.onRequest' },
+  'auto-review': { label: 'Auto Review (auto-review)', labelKey: 'settings.approval.autoReview' },
+  'untrusted': { label: 'Untrusted (untrusted)', labelKey: 'settings.approval.untrusted' },
+  'never': { label: 'Never Ask (never)', labelKey: 'settings.approval.never' },
+}
+
+const NATIVE_ENGINE_CONTROLS: readonly EngineConfigControl[] = [
+  {
+    id: 'sandboxMode',
+    label: 'Permission Mode',
+    labelKey: 'settings.permission',
+    defaultValue: 'workspace-write',
+    options: [
+      { value: 'read-only', label: 'View Only', labelKey: 'settings.nativePermission.readOnly' },
+      { value: 'workspace-write', label: 'Workspace Write', labelKey: 'settings.nativePermission.workspaceWrite' },
+      { value: 'danger-full-access', label: 'Full Access', labelKey: 'settings.nativePermission.dangerFullAccess' },
+    ],
+  },
+]
+
+function buildExternalEngineControls(engine: ExternalCliEngine): EngineConfigControl[] {
+  if (engine.configControls && engine.configControls.length > 0) {
+    return engine.configControls.map(ctrl => ({
+      id: ctrl.id,
+      label: ctrl.label,
+      ...(ctrl.labelKey ? { labelKey: ctrl.labelKey } : {}),
+      ...(ctrl.defaultValue !== undefined ? { defaultValue: ctrl.defaultValue } : {}),
+      options: ctrl.options.map(opt => ({
+        value: opt.value,
+        label: opt.label,
+        ...(opt.labelKey ? { labelKey: opt.labelKey } : {}),
+      })),
+    }))
+  }
+  const controls: EngineConfigControl[] = []
+  if (engine.supportedSandboxes.length > 0) {
+    controls.push({
+      id: 'sandboxMode',
+      label: 'Sandbox Policy',
+      labelKey: 'settings.sandbox',
+      defaultValue: engine.supportedSandboxes.includes('workspace-write') ? 'workspace-write' : engine.supportedSandboxes[0],
+      options: engine.supportedSandboxes.map(mode => ({
+        value: mode,
+        label: SANDBOX_LABELS[mode].label,
+        labelKey: SANDBOX_LABELS[mode].labelKey,
+      })),
+    })
+  }
+  if (engine.supportedApprovals.length > 0) {
+    controls.push({
+      id: 'approvalPolicy',
+      label: 'Approval Policy',
+      labelKey: 'settings.approval',
+      defaultValue: engine.supportedApprovals.includes('on-request') ? 'on-request' : engine.supportedApprovals[0],
+      options: engine.supportedApprovals.map(policy => ({
+        value: policy,
+        label: APPROVAL_LABELS[policy].label,
+        labelKey: APPROVAL_LABELS[policy].labelKey,
+      })),
+    })
+  }
+  return controls
+}
+
+function parseEngineOptions(raw: unknown): Record<string, string> | undefined {
+  if (!isObject(raw)) return undefined
+  const entries: [string, string][] = []
+  for (const [k, v] of Object.entries(raw)) {
+    if (typeof v === 'string' && k.trim()) {
+      entries.push([k.trim(), v])
+    }
+  }
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined
+}
+
 function parseProfile(raw: unknown, fallback: AgentRoleProfile): AgentRoleProfile {
   if (!isObject(raw)) return { ...fallback }
   const engine = typeof raw.engine === 'string' && raw.engine.trim() ? raw.engine.trim() : fallback.engine
@@ -52,9 +136,16 @@ function parseProfile(raw: unknown, fallback: AgentRoleProfile): AgentRoleProfil
   if (raw.sandboxMode === 'read-only' || raw.sandboxMode === 'workspace-write' || raw.sandboxMode === 'danger-full-access') {
     profile.sandboxMode = raw.sandboxMode
   }
-  if (raw.approvalPolicy === 'untrusted' || raw.approvalPolicy === 'on-request' || raw.approvalPolicy === 'never') {
+  if (
+    raw.approvalPolicy === 'untrusted'
+    || raw.approvalPolicy === 'on-request'
+    || raw.approvalPolicy === 'auto-review'
+    || raw.approvalPolicy === 'never'
+  ) {
     profile.approvalPolicy = raw.approvalPolicy
   }
+  const engineOptions = parseEngineOptions(raw.engineOptions)
+  if (engineOptions) profile.engineOptions = engineOptions
   return profile
 }
 
@@ -75,6 +166,7 @@ export function resolveWorkerProfile(
     reasoningEffort?: string
     sandboxMode?: ExternalCliSandboxMode
     approvalPolicy?: ExternalCliApprovalPolicy
+    engineOptions?: Record<string, string>
   },
   registry?: Context['externalCliEngines'],
 ): AgentRoleProfile {
@@ -96,7 +188,12 @@ export function resolveWorkerProfile(
   const model = overrides?.model?.trim() || (!engineChanged ? base.model : undefined)
   const reasoningEffort = overrides?.reasoningEffort?.trim() || (!engineChanged ? base.reasoningEffort : undefined)
   const sandboxMode = overrides?.sandboxMode ?? base.sandboxMode
-  const approvalPolicy = overrides?.approvalPolicy ?? base.approvalPolicy
+  const approvalPolicy = overrides?.approvalPolicy ?? (!engineChanged ? base.approvalPolicy : undefined)
+  const mergedOptions = {
+    ...(!engineChanged ? base.engineOptions : undefined),
+    ...overrides?.engineOptions,
+  }
+  const hasEngineOptions = Object.keys(mergedOptions).length > 0
 
   return {
     engine,
@@ -106,6 +203,7 @@ export function resolveWorkerProfile(
     ...(reasoningEffort ? { reasoningEffort } : {}),
     ...(sandboxMode ? { sandboxMode } : {}),
     ...(approvalPolicy ? { approvalPolicy } : {}),
+    ...(hasEngineOptions ? { engineOptions: mergedOptions } : {}),
   }
 }
 
@@ -196,7 +294,8 @@ export async function listAvailableEngineDescriptors(ctx: Context): Promise<Engi
       label: 'DSH Native',
       kind: 'native',
       supportedSandboxes: ['read-only', 'workspace-write', 'danger-full-access'],
-      supportedApprovals: ['on-request', 'never'],
+      supportedApprovals: [],
+      controls: [...NATIVE_ENGINE_CONTROLS],
       health: { available: true, authenticated: true },
       models: nativeModels,
     },
@@ -219,6 +318,7 @@ export async function listAvailableEngineDescriptors(ctx: Context): Promise<Engi
         kind: 'external',
         supportedSandboxes: engine.supportedSandboxes,
         supportedApprovals: engine.supportedApprovals,
+        controls: buildExternalEngineControls(engine),
         health,
         models,
       })
