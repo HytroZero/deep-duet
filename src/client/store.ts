@@ -6,14 +6,18 @@ import { useRef, useSyncExternalStore } from 'react'
 import { z } from 'zod'
 import {
   createDeepDuetRemoteInfo,
+  type DeepDuetEngineSettings,
+  type DeepDuetEnginesSnapshot,
   type DeepDuetInspectParams,
   type DeepDuetInspectResult,
   type DeepDuetManageParams,
+  type DeepDuetResolveApprovalParams,
   type DeepDuetSpawnParams,
   type DeepDuetSpawnReceipt,
   type DeepDuetSteerParams,
   type DeepDuetTaskReceipt,
   type DeepDuetTasksSnapshot,
+  type EngineDescriptor,
   type TaskRecord,
 } from '../remote'
 
@@ -25,6 +29,8 @@ export interface DeepDuetStoreState {
   inspectLoading: Record<string, boolean>
   pendingActions: Record<string, boolean>
   selectedTaskId: string | undefined
+  engines: EngineDescriptor[]
+  engineSettings: DeepDuetEngineSettings
   ready: boolean
   error: string | undefined
 }
@@ -36,6 +42,10 @@ interface DeepDuetRemoteNamespace {
   steer(input: DeepDuetSteerParams): Promise<RemoteResult<DeepDuetTaskReceipt>>
   manage(input: DeepDuetManageParams): Promise<RemoteResult<DeepDuetTaskReceipt>>
   inspect(input: DeepDuetInspectParams): Promise<RemoteResult<DeepDuetInspectResult>>
+  engines?(): Promise<RemoteResult<DeepDuetEnginesSnapshot>>
+  getSettings?(): Promise<RemoteResult<DeepDuetEngineSettings>>
+  setSettings?(input: DeepDuetEngineSettings): Promise<RemoteResult<DeepDuetEngineSettings>>
+  resolveApproval?(input: DeepDuetResolveApprovalParams): Promise<RemoteResult<DeepDuetTaskReceipt>>
 }
 
 interface MountableRemote {
@@ -49,10 +59,18 @@ export interface DeepDuetClientStore {
   selectTask(sessionId: string | undefined): void
   clearError(): void
   refresh(): Promise<void>
+  refreshEngines(): Promise<void>
+  setSettings(input: DeepDuetEngineSettings): Promise<DeepDuetEngineSettings>
+  resolveApproval(input: DeepDuetResolveApprovalParams): Promise<DeepDuetTaskReceipt>
   spawn(input: DeepDuetSpawnParams): Promise<DeepDuetSpawnReceipt>
   steer(input: DeepDuetSteerParams): Promise<DeepDuetTaskReceipt>
   manage(input: DeepDuetManageParams): Promise<DeepDuetTaskReceipt>
   inspect(input: DeepDuetInspectParams): Promise<DeepDuetInspectResult>
+}
+
+const DEFAULT_SETTINGS: DeepDuetEngineSettings = {
+  master: { engine: 'native', presetId: 'deepduet' },
+  workerDefault: { engine: 'native', presetId: 'standard' },
 }
 
 const INITIAL_STATE: DeepDuetStoreState = {
@@ -63,6 +81,8 @@ const INITIAL_STATE: DeepDuetStoreState = {
   inspectLoading: {},
   pendingActions: {},
   selectedTaskId: undefined,
+  engines: [],
+  engineSettings: DEFAULT_SETTINGS,
   ready: false,
   error: undefined,
 }
@@ -171,10 +191,24 @@ export function createDeepDuetStore(ctx: Context): DeepDuetClientStore {
     }
   }
 
+  async function refreshEngines(): Promise<void> {
+    const api = await ensureRemote()
+    const [enginesRes, settingsRes] = await Promise.all([
+      api.engines ? unwrapResult(api.engines()).catch(() => undefined) : Promise.resolve(undefined),
+      api.getSettings ? unwrapResult(api.getSettings()).catch(() => undefined) : Promise.resolve(undefined),
+    ])
+    if (disposed) return
+    store.update((draft) => {
+      if (enginesRes) draft.engines = [...enginesRes.engines]
+      if (settingsRes) draft.engineSettings = settingsRes
+    })
+  }
+
   async function refresh(): Promise<void> {
     const api = await ensureRemote()
     const snapshot = await unwrapResult(api.list())
     if (!disposed) applySnapshot(snapshot)
+    void refreshEngines().catch(() => {})
   }
 
   function start(): () => void {
@@ -237,6 +271,31 @@ export function createDeepDuetStore(ctx: Context): DeepDuetClientStore {
     },
 
     refresh,
+    refreshEngines,
+
+    async setSettings(input) {
+      return withPending('settings', async () => {
+        const api = await ensureRemote()
+        if (!api.setSettings) return input
+        const saved = await unwrapResult(api.setSettings(input))
+        store.update((draft) => {
+          draft.engineSettings = saved
+        })
+        return saved
+      })
+    },
+
+    async resolveApproval(input) {
+      return withPending(`approval:${input.sessionId}`, async () => {
+        const api = await ensureRemote()
+        if (!api.resolveApproval) {
+          throw new Error('resolveApproval is not supported by this host')
+        }
+        const receipt = await unwrapResult(api.resolveApproval(input))
+        await refresh().catch(() => {})
+        return receipt
+      })
+    },
 
     async spawn(input) {
       return withPending(`spawn:${input.masterId}`, async () => {

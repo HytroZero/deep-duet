@@ -7,6 +7,17 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
 
+function isProfile(value: unknown): boolean {
+  if (!isObject(value)) return false
+  return typeof value.engine === 'string' && value.engine.length > 0
+    && typeof value.presetId === 'string' && value.presetId.length > 0
+    && (value.provider === undefined || typeof value.provider === 'string')
+    && (value.model === undefined || typeof value.model === 'string')
+    && (value.reasoningEffort === undefined || typeof value.reasoningEffort === 'string')
+    && (value.sandboxMode === undefined || ['read-only', 'workspace-write', 'danger-full-access'].includes(String(value.sandboxMode)))
+    && (value.approvalPolicy === undefined || ['untrusted', 'on-request', 'never'].includes(String(value.approvalPolicy)))
+}
+
 function isRecord(value: unknown): value is TaskRecord {
   if (!isObject(value)) return false
   const worktree = value.worktree
@@ -18,6 +29,7 @@ function isRecord(value: unknown): value is TaskRecord {
     && typeof value.needsDecision === 'boolean'
     && (value.decisionQuestion === undefined || typeof value.decisionQuestion === 'string')
     && (value.lastSummary === undefined || typeof value.lastSummary === 'string')
+    && (value.profile === undefined || isProfile(value.profile))
     && typeof value.createdAt === 'number' && Number.isSafeInteger(value.createdAt) && value.createdAt >= 0
     && typeof value.updatedAt === 'number' && Number.isSafeInteger(value.updatedAt) && value.updatedAt >= 0
     && (worktree === undefined || (isObject(worktree) && typeof worktree.repoRoot === 'string'
@@ -65,13 +77,19 @@ export async function openLedger(directory: string) {
   const recovered = new Map(records)
   let changed = false
   for (const record of records.values()) {
-    if (record.status !== 'running') continue
+    if (record.status !== 'running' && record.pendingApproval === undefined) continue
     changed = true
-    const { decisionQuestion: _question, ...task } = record
-    recovered.set(record.sessionId, {
-      ...task, status: 'failed', needsDecision: false,
-      lastSummary: 'Interrupted by process restart', updatedAt: Date.now(),
-    })
+    const { decisionQuestion: _question, pendingApproval: _pending, ...task } = record
+    if (record.status === 'running') {
+      recovered.set(record.sessionId, {
+        ...task, status: 'failed', needsDecision: false,
+        lastSummary: 'Interrupted by process restart', updatedAt: Date.now(),
+      })
+    } else {
+      recovered.set(record.sessionId, {
+        ...task, needsDecision: false, updatedAt: Date.now(),
+      })
+    }
   }
   if (changed) await commit(recovered)
 

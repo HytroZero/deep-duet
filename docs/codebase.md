@@ -32,10 +32,15 @@ deep-duet/
 │   ├── digest.ts                 # 简报队列模块：按 Master 分桶、同任务去重、优先级排序、1.5s 合并投递
 │   ├── remote.ts                 # Typert 远程协议契约定义 (Zod schemas + invocation descriptors)
 │   ├── host-remote.ts            # Host 端 Typert RPC 与实时 Watch 流实现
+│   ├── engine-settings.ts        # Duet/Worker 角色四元组配置持久化与外部 CLI 引擎枚举
+│   ├── external-cli-contract.ts  # 跨插件共享的 ExternalCliEngineRegistry 结构化契约
+│   ├── master-mcp.ts             # 会话级本地 MCP HTTP 桥接服务 (供外部 CLI Master 调用)
+│   ├── mcp-stdio-bridge.ts       # 轻量 stdio <-> HTTP MCP 转发脚本
 │   ├── text.ts                   # 共享文本工具：按码点安全截断摘要
 │   └── client/
 │       ├── index.tsx             # Web Client 插件入口：通过 ctx.slots.inject 挂载 UI 插槽与右侧栏 Tab
 │       ├── store.ts              # 基于 @deepseek-ai/dsh-client-store 的客户端状态与 $stream 订阅
+│       ├── DeepDuetSettingsSection.tsx # 设置页：Duet/Worker 默认运行环境与四元组配置
 │       ├── DeepDuetSidebarTab.tsx# 右侧栏 DeepDuet 编排面板组件
 │       ├── DeepDuetSurface.tsx   # 会话列表徽标、Header 导航胶囊、Input Dock 决策卡与工具卡片组件
 │       ├── status.ts             # 状态视图映射与计数汇总纯函数
@@ -46,6 +51,7 @@ deep-duet/
     ├── tasks.test.js             # 任务核心闭环、故障恢复与真实 Git Worktree 测试
     ├── dsh.test.js               # 真实 DSH Agent Loop、原生审批、接管隔离与卸载测试
     ├── gui-remote.test.js        # Typert RPC/Watch 流、Preset 隔离与 dist/client.js 插槽加载测试
+    ├── external-cli-integration.test.js # 独立降级、codex-portal (dsh-codex-portal) 混合调度、双通道审批与 MCP Master 测试
     └── deepduet-mode.test.js     # Bundle 规范、Preset 作用域与 Workspace 挂载测试
 ```
 

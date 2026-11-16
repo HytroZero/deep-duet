@@ -2,10 +2,17 @@ import type { Context } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { DshHost } from './dsh.js'
+import {
+  defaultEngineSettings,
+  listAvailableEngineDescriptors,
+  type DeepDuetEngineSettings,
+} from './engine-settings.js'
 import type {
+  DeepDuetEnginesSnapshot,
   DeepDuetInspectParams,
   DeepDuetInspectResult,
   DeepDuetManageParams,
+  DeepDuetResolveApprovalParams,
   DeepDuetSpawnParams,
   DeepDuetSpawnReceipt,
   DeepDuetSteerParams,
@@ -22,6 +29,10 @@ export interface DeepDuetRemoteHandlers {
   remoteSteer(input: DeepDuetSteerParams): Promise<DeepDuetTaskReceipt>
   remoteManage(input: DeepDuetManageParams): Promise<DeepDuetTaskReceipt>
   remoteInspect(input: DeepDuetInspectParams): Promise<DeepDuetInspectResult>
+  remoteEngines(): Promise<DeepDuetEnginesSnapshot>
+  remoteGetSettings(): DeepDuetEngineSettings
+  remoteSetSettings(input: DeepDuetEngineSettings): Promise<DeepDuetEngineSettings>
+  remoteResolveApproval(input: DeepDuetResolveApprovalParams): Promise<DeepDuetTaskReceipt>
 }
 
 export function createDeepDuetRemoteHandlers(options: {
@@ -29,8 +40,10 @@ export function createDeepDuetRemoteHandlers(options: {
   host: DshHost
   projectRoot: string
   getTasks: () => TaskManager
+  getSettings?: () => DeepDuetEngineSettings
+  setSettings?: (next: DeepDuetEngineSettings) => Promise<DeepDuetEngineSettings>
 }): DeepDuetRemoteHandlers {
-  const { ctx, host, projectRoot, getTasks } = options
+  const { ctx, host, projectRoot, getTasks, getSettings, setSettings } = options
   const watchers = new Set<() => void>()
   let version = 0
 
@@ -116,6 +129,12 @@ export function createDeepDuetRemoteHandlers(options: {
         prompt: input.prompt,
         ...(input.cwd !== undefined && { cwd: input.cwd }),
         ...(input.isolateWorktree !== undefined && { isolateWorktree: input.isolateWorktree }),
+        ...(input.engine !== undefined && { engine: input.engine }),
+        ...(input.provider !== undefined && { provider: input.provider }),
+        ...(input.model !== undefined && { model: input.model }),
+        ...(input.reasoningEffort !== undefined && { reasoningEffort: input.reasoningEffort }),
+        ...(input.sandboxMode !== undefined && { sandboxMode: input.sandboxMode }),
+        ...(input.approvalPolicy !== undefined && { approvalPolicy: input.approvalPolicy }),
       })
       const record = findTask(created.sessionId)
       return {
@@ -168,6 +187,35 @@ export function createDeepDuetRemoteHandlers(options: {
         },
         gitStatus: inspected.gitStatus,
       }
+    },
+
+    async remoteEngines() {
+      return {
+        engines: await listAvailableEngineDescriptors(ctx),
+      }
+    },
+
+    remoteGetSettings() {
+      return getSettings ? getSettings() : defaultEngineSettings()
+    },
+
+    async remoteSetSettings(input) {
+      if (!setSettings) return defaultEngineSettings()
+      const saved = await setSettings(input)
+      notifyWatchers()
+      return saved
+    },
+
+    async remoteResolveApproval(input) {
+      const target = findMasterForWorker(input.sessionId, input.masterId)
+      const context = await resolveContext(target.masterId, target.cwd)
+      const updated = await getTasks().resolveApproval(context, {
+        sessionId: input.sessionId,
+        requestId: input.requestId,
+        approved: input.approved,
+        ...(input.payload !== undefined ? { payload: input.payload } : {}),
+      })
+      return toReceipt(updated)
     },
   }
 }

@@ -8,11 +8,14 @@ import { realpath, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { isAbsolute, join } from 'node:path'
 import { createDshHost } from './dsh.js'
+import { openEngineSettings } from './engine-settings.js'
 import { createDeepDuetRemoteHandlers, type DeepDuetRemoteHandlers } from './host-remote.js'
+import { startMasterMcpServer } from './master-mcp.js'
 import { createDeepDuetRemoteInfo } from './remote.js'
 import { openTasks, TaskError } from './tasks.js'
 import type { TaskContext, TaskManager } from './tasks.js'
 import { bindTypertRemote } from '@deepseek-ai/dsh-typert-protocol'
+import type {} from '@deepseek-ai/dsh-agent-preset-registry/types'
 import type {} from '@deepseek-ai/dsh-typert-registry'
 import { z } from 'zod'
 
@@ -51,6 +54,10 @@ export interface DeepDuetService {
   remoteSteer: DeepDuetRemoteHandlers['remoteSteer']
   remoteManage: DeepDuetRemoteHandlers['remoteManage']
   remoteInspect: DeepDuetRemoteHandlers['remoteInspect']
+  remoteEngines: DeepDuetRemoteHandlers['remoteEngines']
+  remoteGetSettings: DeepDuetRemoteHandlers['remoteGetSettings']
+  remoteSetSettings: DeepDuetRemoteHandlers['remoteSetSettings']
+  remoteResolveApproval: DeepDuetRemoteHandlers['remoteResolveApproval']
   typertRemote?: ReturnType<typeof bindTypertRemote>
 }
 
@@ -137,18 +144,90 @@ export async function apply(ctx: Context, config: Config = {}) {
 
   const warn = (message: string) => ctx.logger.warn(message)
   const host = createDshHost(ctx)
+  const settingsStore = await openEngineSettings(ledgerDirectory)
   let tasks!: TaskManager
+  const masterMcp = await startMasterMcpServer(() => tasks)
+
+  async function bindExternalMasterIfConfigured(agent: Agent) {
+    if (agent.session.header.origin === 'subagent' || tasks.isWorker(agent.id)) return
+    const presets = ctx.root.get('agentPresets') as { composedPreset?(c: unknown): string | undefined } | undefined
+    const effectivePreset = presets?.composedPreset?.(agent.ctx) ?? agent.session.header.agentPreset
+    if (effectivePreset !== 'deepduet') return
+
+    const masterProfile = settingsStore.get().master
+    if (masterProfile.engine === 'native') return
+
+    const registry = ctx.root.get('externalCliEngines')
+    const engine = registry?.get(masterProfile.engine)
+    if (!engine) {
+      warn(`DeepDuet Master configured to use "${masterProfile.engine}", which is not currently installed`)
+      return
+    }
+    const mcpConfig = masterMcp.issueMasterConfig(agent.id, () => ctx.workingDirectory.get(agent.session))
+    await engine.configureSession(agent.id, {
+      ...(masterProfile.model ? { model: masterProfile.model } : {}),
+      ...(masterProfile.reasoningEffort ? { reasoningEffort: masterProfile.reasoningEffort } : {}),
+      ...(masterProfile.sandboxMode ? { sandboxMode: masterProfile.sandboxMode } : {}),
+      ...(masterProfile.approvalPolicy ? { approvalPolicy: masterProfile.approvalPolicy } : {}),
+      developerInstructions: MASTER_PROMPT,
+      mcpServers: { deepduet: mcpConfig },
+    })
+  }
+
   const remoteHandlers = createDeepDuetRemoteHandlers({
     ctx,
     host,
     projectRoot,
     getTasks: () => tasks,
+    getSettings: () => settingsStore.get(),
+    setSettings: async (next) => {
+      const saved = await settingsStore.set(next)
+      for (const agent of ctx.agents.list()) {
+        await bindExternalMasterIfConfigured(agent).catch(err => warn(String(err)))
+      }
+      return saved
+    },
   })
-  tasks = await openTasks(ledgerDirectory, host, warn, () => remoteHandlers.notifyWatchers())
+  tasks = await openTasks(
+    ledgerDirectory,
+    host,
+    warn,
+    () => remoteHandlers.notifyWatchers(),
+    {
+      getSettings: () => settingsStore.get(),
+      getEngineRegistry: () => ctx.root.get('externalCliEngines'),
+    },
+  )
 
   ctx.effect(() => async () => {
     await tasks.close()
+    await masterMcp.close()
   }, 'DeepDuet teardown')
+
+  ctx.effect(() => ctx.on('agent/created', async ({ agent }) => {
+    await bindExternalMasterIfConfigured(agent).catch(err => warn(String(err)))
+  }), 'DeepDuet external Master binding')
+
+  ctx.effect(() => ctx.on('agent-preset/selected', (sessionId, agentPreset) => {
+    if (agentPreset === 'deepduet') {
+      const agent = ctx.agents.get(sessionId)
+      if (agent) void bindExternalMasterIfConfigured(agent).catch(err => warn(String(err)))
+    }
+  }), 'DeepDuet external Master preset switch')
+
+  ctx.inject(['externalCliEngines'], (extCtx) => {
+    const reg = extCtx.externalCliEngines
+    if (!reg) return
+    extCtx.effect(() => reg.onChange(() => {
+      remoteHandlers.notifyWatchers()
+      for (const agent of ctx.agents.list()) {
+        void bindExternalMasterIfConfigured(agent).catch(err => warn(String(err)))
+      }
+    }), 'DeepDuet externalCliEngines observer')
+    for (const agent of ctx.agents.list()) {
+      void bindExternalMasterIfConfigured(agent).catch(err => warn(String(err)))
+    }
+  })
 
   function isMaster(agent: Agent) {
     return agent.session.header.origin !== 'subagent' && !tasks.isWorker(agent.id)
@@ -226,6 +305,10 @@ export async function apply(ctx: Context, config: Config = {}) {
         prompt: { type: 'string', required: true, description: 'Full goal, scope and verification instructions for the worker.' },
         cwd: { type: 'string', description: 'Optional working directory inside the Master workspace; relative paths resolve against Master cwd.' },
         isolateWorktree: { type: 'boolean', description: 'Create an isolated Git worktree and branch deepduet/<sessionId>.' },
+        engine: { type: 'string', description: 'Optional Worker engine override (e.g. "native", "codex-portal").' },
+        model: { type: 'string', description: 'Optional Worker model override.' },
+        reasoningEffort: { type: 'string', description: 'Optional reasoning effort override.' },
+        sandboxMode: { type: 'string', enum: ['read-only', 'workspace-write', 'danger-full-access'], description: 'Optional sandbox policy override.' },
       },
       output,
       presentCall: (args) => ({

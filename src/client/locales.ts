@@ -31,6 +31,8 @@ export const zh = {
   'dock.workerBanner': '当前正在直接接管后台 Worker：{title}',
   'dock.workerWorktree': '分支：{branch}',
   'dock.stopTurn': '停止运行',
+  'dock.approve': '允许执行',
+  'dock.reject': '拒绝',
 
   // Right sidebar tab
   'tab.title': 'DeepDuet',
@@ -52,12 +54,19 @@ export const zh = {
   'spawn.promptLabel': '目标与验收要求',
   'spawn.promptPlaceholder': '清晰描述任务范围、修改约束及如何验证完成...',
   'spawn.worktreeLabel': '使用独立 Git Worktree 隔离工作区',
+  'spawn.overrideToggle': '运行环境覆盖（可选）',
+  'spawn.engine': '运行引擎',
+  'spawn.model': '模型',
+  'spawn.effort': '推理强度',
+  'spawn.sandbox': '沙箱策略',
+  'spawn.useDefault': '跟随默认配置',
   'spawn.submit': '派发 Worker',
   'spawn.submitting': '正在派发...',
   'spawn.cancel': '取消',
 
   // Inspector
   'inspect.title': 'Worker 详情',
+  'inspect.engine': '运行引擎',
   'inspect.inspectBtn': '检查状态',
   'inspect.openChat': '打开对话',
   'inspect.openMaster': '回到 Master',
@@ -88,6 +97,30 @@ export const zh = {
   'tool.isolated': '隔离 Worktree',
   'tool.running': '执行中...',
   'tool.action': '操作：{action}',
+
+  // Settings section
+  'settings.nav': 'DeepDuet',
+  'settings.title': 'DeepDuet 协作角色配置',
+  'settings.subtitle': '分别为 Duet（Master）与后台 Worker 分配运行引擎、模型、推理强度与沙箱策略。',
+  'settings.masterTitle': 'Duet（Master）默认环境',
+  'settings.workerTitle': 'Worker 默认环境',
+  'settings.engine': '运行环境 (Mode)',
+  'settings.model': '模型',
+  'settings.effort': '推理强度',
+  'settings.sandbox': '沙箱策略',
+  'settings.approval': '审批策略',
+  'settings.modelDefault': '自动 / 跟随当前会话',
+  'settings.refreshEngines': '刷新引擎列表',
+  'settings.save': '保存分配',
+  'settings.saving': '保存中…',
+  'settings.saved': '已保存',
+  'settings.unhealthyCli': '所选外部 CLI 当前不可用或未登录：{detail}',
+  'settings.sandbox.readOnly': '只读 (read-only)',
+  'settings.sandbox.workspaceWrite': '工作区可写 (workspace-write)',
+  'settings.sandbox.dangerFullAccess': '完全访问 (danger-full-access)',
+  'settings.approval.onRequest': '按需确认 (on-request)',
+  'settings.approval.untrusted': '严格确认 (untrusted)',
+  'settings.approval.never': '自动通过 (never)',
 } as const
 
 export type DeepDuetLocaleKey = keyof typeof zh
@@ -123,6 +156,8 @@ export const en: Record<DeepDuetLocaleKey, string> = {
   'dock.workerBanner': 'Taking over background Worker: {title}',
   'dock.workerWorktree': 'Branch: {branch}',
   'dock.stopTurn': 'Stop Turn',
+  'dock.approve': 'Approve',
+  'dock.reject': 'Decline',
 
   // Right sidebar tab
   'tab.title': 'DeepDuet',
@@ -144,12 +179,19 @@ export const en: Record<DeepDuetLocaleKey, string> = {
   'spawn.promptLabel': 'Goal & Verification',
   'spawn.promptPlaceholder': 'Describe scope, constraints, and how to verify completion...',
   'spawn.worktreeLabel': 'Isolate in a dedicated Git worktree',
+  'spawn.overrideToggle': 'Runtime Environment Override (optional)',
+  'spawn.engine': 'Engine',
+  'spawn.model': 'Model',
+  'spawn.effort': 'Reasoning Effort',
+  'spawn.sandbox': 'Sandbox Policy',
+  'spawn.useDefault': 'Use Worker default',
   'spawn.submit': 'Spawn Worker',
   'spawn.submitting': 'Spawning...',
   'spawn.cancel': 'Cancel',
 
   // Inspector
   'inspect.title': 'Worker Details',
+  'inspect.engine': 'Runtime Engine',
   'inspect.inspectBtn': 'Inspect',
   'inspect.openChat': 'Open Chat',
   'inspect.openMaster': 'Open Master',
@@ -180,6 +222,30 @@ export const en: Record<DeepDuetLocaleKey, string> = {
   'tool.isolated': 'Isolated Worktree',
   'tool.running': 'Running...',
   'tool.action': 'Action: {action}',
+
+  // Settings section
+  'settings.nav': 'DeepDuet',
+  'settings.title': 'DeepDuet Agent Runtime Profiles',
+  'settings.subtitle': 'Assign independent Mode, Model, Reasoning Effort, and Sandbox policies for Duet (Master) and background Workers.',
+  'settings.masterTitle': 'Duet (Master) Default',
+  'settings.workerTitle': 'Worker Default',
+  'settings.engine': 'Runtime Environment (Mode)',
+  'settings.model': 'Model',
+  'settings.effort': 'Reasoning Effort',
+  'settings.sandbox': 'Sandbox Policy',
+  'settings.approval': 'Approval Policy',
+  'settings.modelDefault': 'Auto / Session default',
+  'settings.refreshEngines': 'Refresh Engines',
+  'settings.save': 'Save Settings',
+  'settings.saving': 'Saving…',
+  'settings.saved': 'Saved',
+  'settings.unhealthyCli': 'Selected external CLI is unavailable or unauthenticated: {detail}',
+  'settings.sandbox.readOnly': 'Read Only (read-only)',
+  'settings.sandbox.workspaceWrite': 'Workspace Write (workspace-write)',
+  'settings.sandbox.dangerFullAccess': 'Full Access (danger-full-access)',
+  'settings.approval.onRequest': 'On Request (on-request)',
+  'settings.approval.untrusted': 'Untrusted (untrusted)',
+  'settings.approval.never': 'Never Ask (never)',
 }
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {

@@ -62,12 +62,20 @@ export function DeepDuetSidebarTab({
   const inspectLoading = useDeepDuetSelector(store, s => s.inspectLoading, undefined, useDeepduet)
   const pendingActions = useDeepDuetSelector(store, s => s.pendingActions, undefined, useDeepduet)
   const storeError = useDeepDuetSelector(store, s => s.error, undefined, useDeepduet)
+  const engines = useDeepDuetSelector(store, s => s.engines, undefined, useDeepduet)
+  const engineSettings = useDeepDuetSelector(store, s => s.engineSettings, undefined, useDeepduet)
 
   const [scope, setScope] = useState<'session' | 'all'>('session')
   const [showSpawn, setShowSpawn] = useState(false)
   const [spawnTitle, setSpawnTitle] = useState('')
   const [spawnPrompt, setSpawnPrompt] = useState('')
   const [spawnWorktree, setSpawnWorktree] = useState(false)
+  const [showOverride, setShowOverride] = useState(false)
+  const [overrideEngine, setOverrideEngine] = useState('')
+  const [overrideProvider, setOverrideProvider] = useState('')
+  const [overrideModel, setOverrideModel] = useState('')
+  const [overrideEffort, setOverrideEffort] = useState('')
+  const [overrideSandbox, setOverrideSandbox] = useState('')
   const [steerText, setSteerText] = useState('')
   const [confirmArchiveId, setConfirmArchiveId] = useState<string | undefined>(undefined)
 
@@ -110,6 +118,12 @@ export function DeepDuetSidebarTab({
   const inspected = selectedTask ? inspections[selectedTask.sessionId] : undefined
   const isInspecting = selectedTask ? Boolean(inspectLoading[selectedTask.sessionId]) : false
   const isSpawning = activeMasterId ? Boolean(pendingActions[`spawn:${activeMasterId}`]) : false
+  const activeOverrideEngine = overrideEngine || engineSettings.workerDefault.engine
+  const overrideEngineDesc = engines.find(e => e.id === activeOverrideEngine)
+  const overrideModels = overrideEngineDesc?.models ?? []
+  const overrideModelDesc = overrideModels.find(m => m.id === overrideModel && (!overrideProvider || !m.provider || m.provider === overrideProvider))
+    ?? overrideModels.find(m => m.id === overrideModel)
+  const overrideEfforts = overrideModelDesc?.reasoningEfforts ?? []
 
   async function handleSpawn(event: FormEvent) {
     event.preventDefault()
@@ -123,10 +137,21 @@ export function DeepDuetSidebarTab({
         title,
         prompt,
         ...(spawnWorktree && { isolateWorktree: true }),
+        ...(showOverride && overrideEngine ? { engine: overrideEngine } : {}),
+        ...(showOverride && overrideProvider ? { provider: overrideProvider } : {}),
+        ...(showOverride && overrideModel ? { model: overrideModel } : {}),
+        ...(showOverride && overrideEffort ? { reasoningEffort: overrideEffort } : {}),
+        ...(showOverride && overrideSandbox ? { sandboxMode: overrideSandbox as 'read-only' | 'workspace-write' | 'danger-full-access' } : {}),
       })
       setSpawnTitle('')
       setSpawnPrompt('')
       setSpawnWorktree(false)
+      setShowOverride(false)
+      setOverrideEngine('')
+      setOverrideProvider('')
+      setOverrideModel('')
+      setOverrideEffort('')
+      setOverrideSandbox('')
       setShowSpawn(false)
     } catch {
       // Error surfaced via store.error
@@ -283,6 +308,94 @@ export function DeepDuetSidebarTab({
                   />
                   <span>{t('spawn.worktreeLabel')}</span>
                 </label>
+                {engines.length > 0 && (
+                  <>
+                    <button
+                      type="button"
+                      className={styles.overrideToggle}
+                      onClick={() => setShowOverride(v => !v)}
+                    >
+                      <span>{showOverride ? '▾' : '▸'} {t('spawn.overrideToggle')}</span>
+                    </button>
+                    {showOverride && (
+                      <div className={styles.overrideBox}>
+                        <label className={styles.fieldLabel}>
+                          <span>{t('spawn.engine')}</span>
+                          <select
+                            className={styles.selectInput}
+                            value={overrideEngine}
+                            onChange={(e) => {
+                              setOverrideEngine(e.target.value)
+                              setOverrideProvider('')
+                              setOverrideModel('')
+                              setOverrideEffort('')
+                            }}
+                          >
+                            <option value="">{t('spawn.useDefault')} ({engineSettings.workerDefault.engine})</option>
+                            {engines.map(eng => (
+                              <option key={eng.id} value={eng.id}>{eng.label}</option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className={styles.fieldLabel}>
+                          <span>{t('spawn.model')}</span>
+                          <select
+                            className={styles.selectInput}
+                            value={overrideModel ? `${overrideProvider}::${overrideModel}` : ''}
+                            onChange={(e) => {
+                              const val = e.target.value
+                              if (!val) {
+                                setOverrideProvider('')
+                                setOverrideModel('')
+                                setOverrideEffort('')
+                                return
+                              }
+                              const [prov, ...rest] = val.split('::')
+                              setOverrideProvider(prov ?? '')
+                              setOverrideModel(rest.join('::'))
+                              setOverrideEffort('')
+                            }}
+                          >
+                            <option value="">{t('spawn.useDefault')}</option>
+                            {overrideModels.map(m => (
+                              <option key={`${m.provider ?? activeOverrideEngine}::${m.id}`} value={`${m.provider ?? ''}::${m.id}`}>
+                                {m.name}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        {overrideEfforts.length > 0 && (
+                          <label className={styles.fieldLabel}>
+                            <span>{t('spawn.effort')}</span>
+                            <select
+                              className={styles.selectInput}
+                              value={overrideEffort}
+                              onChange={e => setOverrideEffort(e.target.value)}
+                            >
+                              <option value="">{t('spawn.useDefault')}</option>
+                              {overrideEfforts.map(eff => (
+                                <option key={eff.id} value={eff.id}>{eff.name}</option>
+                              ))}
+                            </select>
+                          </label>
+                        )}
+                        <label className={styles.fieldLabel}>
+                          <span>{t('spawn.sandbox')}</span>
+                          <select
+                            className={styles.selectInput}
+                            value={overrideSandbox}
+                            onChange={e => setOverrideSandbox(e.target.value)}
+                          >
+                            <option value="">{t('spawn.useDefault')}</option>
+                            <option value="read-only">{t('settings.sandbox.readOnly')}</option>
+                            <option value="workspace-write">{t('settings.sandbox.workspaceWrite')}</option>
+                            <option value="danger-full-access">{t('settings.sandbox.dangerFullAccess')}</option>
+                          </select>
+                        </label>
+                      </div>
+                    )}
+                  </>
+                )}
                 <div className={styles.actionRow}>
                   <Button variant="primary" size="sm" type="submit" disabled={isSpawning || !spawnTitle.trim() || !spawnPrompt.trim()}>
                     {isSpawning ? t('spawn.submitting') : t('spawn.submit')}
@@ -334,7 +447,11 @@ export function DeepDuetSidebarTab({
                     </div>
                   )}
                   <div className={styles.taskCardMeta}>
-                    <span>{task.worktree?.branch ?? task.sessionId.slice(0, 8)}</span>
+                    <span>
+                      {task.profile && task.profile.engine !== 'native'
+                        ? `${task.profile.engine}${task.profile.model ? ` · ${task.profile.model}` : ''}`
+                        : (task.worktree?.branch ?? task.sessionId.slice(0, 8))}
+                    </span>
                     <span>{formatAge(task.updatedAt)}</span>
                   </div>
                 </button>
@@ -423,6 +540,47 @@ export function DeepDuetSidebarTab({
                 <div>
                   <div className={styles.sectionLabel}>{t('inspect.decision')}</div>
                   <p className={styles.dockQuestion}>{selectedTask.decisionQuestion}</p>
+                  {selectedTask.pendingApproval && selectedTask.pendingApproval.kind !== 'user-input' && (
+                    <div className={styles.actionRow}>
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        disabled={Boolean(pendingActions[`approval:${selectedTask.sessionId}`])}
+                        onClick={() => void store.resolveApproval({
+                          masterId: selectedTask.masterId,
+                          sessionId: selectedTask.sessionId,
+                          requestId: selectedTask.pendingApproval!.requestId,
+                          approved: true,
+                        }).catch(() => {})}
+                      >
+                        {t('dock.approve')}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={Boolean(pendingActions[`approval:${selectedTask.sessionId}`])}
+                        onClick={() => void store.resolveApproval({
+                          masterId: selectedTask.masterId,
+                          sessionId: selectedTask.sessionId,
+                          requestId: selectedTask.pendingApproval!.requestId,
+                          approved: false,
+                        }).catch(() => {})}
+                      >
+                        {t('dock.reject')}
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {selectedTask.profile && (
+                <div>
+                  <div className={styles.sectionLabel}>{t('inspect.engine')}</div>
+                  <div className={styles.monoText}>
+                    {[selectedTask.profile.engine, selectedTask.profile.model, selectedTask.profile.reasoningEffort, selectedTask.profile.sandboxMode]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </div>
                 </div>
               )}
 

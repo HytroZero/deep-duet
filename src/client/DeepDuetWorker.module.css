@@ -500,3 +500,95 @@
   white-space: pre-wrap;
   word-break: break-word;
 }
+
+.selectInput {
+  width: 100%;
+  box-sizing: border-box;
+  height: 30px;
+  border-radius: 6px;
+  border: 1px solid var(--dsw-border-subtle, rgba(128, 128, 128, 0.3));
+  background: var(--dsw-bg-canvas, transparent);
+  color: var(--dsw-text-primary, inherit);
+  padding: 0 8px;
+  font-size: 12.5px;
+  font-family: inherit;
+}
+
+.overrideBox {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 6px;
+  border: 1px dashed var(--dsw-border-subtle, rgba(128, 128, 128, 0.3));
+}
+
+.overrideToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: none;
+  background: transparent;
+  padding: 0;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--dsw-accent, #2563eb);
+  cursor: pointer;
+  align-self: flex-start;
+}
+
+.settingsWrap {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.settingsHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.settingsTitle {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.settingsSubtitle {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--dsw-text-secondary, rgba(128, 128, 128, 0.9));
+}
+
+.settingsCard {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--dsw-border-subtle, rgba(128, 128, 128, 0.25));
+  background: var(--dsw-surface-elevated, rgba(128, 128, 128, 0.05));
+}
+
+.settingsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.settingsWarn {
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: rgba(245, 158, 11, 0.14);
+  color: #b45309;
+  font-size: 12px;
+}
+
+.settingsFoot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}

@@ -174,7 +174,12 @@ function DecisionPromptCard({
 }) {
   const [reply, setReply] = useState('')
   const [error, setError] = useState<string | undefined>(undefined)
-  const pending = useDeepDuetSelector(store, s => Boolean(s.pendingActions[`steer:${task.sessionId}`]), undefined, useDeepduet)
+  const pending = useDeepDuetSelector(
+    store,
+    s => Boolean(s.pendingActions[`steer:${task.sessionId}`] || s.pendingActions[`approval:${task.sessionId}`]),
+    undefined,
+    useDeepduet,
+  )
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault()
@@ -188,6 +193,21 @@ function DecisionPromptCard({
         instruction: text,
       })
       setReply('')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  async function handleApprovalDecision(approved: boolean) {
+    if (!task.pendingApproval) return
+    setError(undefined)
+    try {
+      await store.resolveApproval({
+        masterId: task.masterId,
+        sessionId: task.sessionId,
+        requestId: task.pendingApproval.requestId,
+        approved,
+      })
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     }
@@ -207,19 +227,30 @@ function DecisionPromptCard({
       {task.decisionQuestion && (
         <p className={styles.dockQuestion}>{task.decisionQuestion}</p>
       )}
-      <form className={styles.dockForm} onSubmit={(e) => void handleSubmit(e)}>
-        <input
-          className={styles.dockInput}
-          type="text"
-          value={reply}
-          placeholder={t('dock.replyPlaceholder')}
-          onChange={e => setReply(e.target.value)}
-          disabled={pending}
-        />
-        <Button variant="primary" size="sm" type="submit" disabled={pending || !reply.trim()}>
-          {pending ? t('dock.replySending') : t('dock.replySubmit')}
-        </Button>
-      </form>
+      {task.pendingApproval && task.pendingApproval.kind !== 'user-input' ? (
+        <div className={styles.actionRow}>
+          <Button variant="primary" size="sm" disabled={pending} onClick={() => void handleApprovalDecision(true)}>
+            {t('dock.approve')}
+          </Button>
+          <Button variant="outline" size="sm" disabled={pending} onClick={() => void handleApprovalDecision(false)}>
+            {t('dock.reject')}
+          </Button>
+        </div>
+      ) : (
+        <form className={styles.dockForm} onSubmit={(e) => void handleSubmit(e)}>
+          <input
+            className={styles.dockInput}
+            type="text"
+            value={reply}
+            placeholder={t('dock.replyPlaceholder')}
+            onChange={e => setReply(e.target.value)}
+            disabled={pending}
+          />
+          <Button variant="primary" size="sm" type="submit" disabled={pending || !reply.trim()}>
+            {pending ? t('dock.replySending') : t('dock.replySubmit')}
+          </Button>
+        </form>
+      )}
       {error && <div className={styles.dockError}>{error}</div>}
     </div>
   )

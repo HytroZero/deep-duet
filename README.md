@@ -34,6 +34,11 @@
 
 ## 协作流程
 
+![DeepDuet 协作流程架构图](./docs/assets/collaboration-flow.png)
+
+<details>
+<summary>查看文本流程图（Mermaid）</summary>
+
 ```mermaid
 flowchart LR
     User["你"] <-->|"自然对话 · 拍板决策"| Master["Master（安静的书房）"]
@@ -44,6 +49,8 @@ flowchart LR
     Digest -.->|"主对话空闲时温和汇总"| Master
     User <-->|"面板巡检 · 决策卡片"| Workers
 ```
+
+</details>
 
 1. **轻量直通，重活异步派发**：Master 记住你的偏好与项目背景，只把与任务相关的目标、范围和验收标准浓缩进工作间简报，不让无关闲聊干扰执行。
 2. **后台专注，不打断你的思路**：多个 Worker 在各自空间（共享目录或独立 Git Worktree）并行推进，结果自动持久化到工程账本，重启也不丢失上下文。

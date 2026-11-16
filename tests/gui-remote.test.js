@@ -66,16 +66,20 @@ test('host exposes Typert remote descriptors and streams live watch/spawn/inspec
     return `Completed: ${input}`
   })
 
-  // Verify Typert registry received all 6 endpoints and binding matches gateway check
+  // Verify Typert registry received all 10 endpoints and binding matches gateway check
   const reg = ctx.typert.getPackage('dsh-plugin-deepduet', 'host')
   assert.ok(reg, 'dsh-plugin-deepduet host package should be registered with TypertRegistry')
   const deepduetEndpoints = ctx.typert.local.list({ package: 'dsh-plugin-deepduet' })
   assert.deepEqual(
     deepduetEndpoints.map(item => item.id).sort(),
     [
+      'dsh-plugin-deepduet#deepduet/engines',
+      'dsh-plugin-deepduet#deepduet/getSettings',
       'dsh-plugin-deepduet#deepduet/inspect',
       'dsh-plugin-deepduet#deepduet/list',
       'dsh-plugin-deepduet#deepduet/manage',
+      'dsh-plugin-deepduet#deepduet/resolveApproval',
+      'dsh-plugin-deepduet#deepduet/setSettings',
       'dsh-plugin-deepduet#deepduet/spawn',
       'dsh-plugin-deepduet#deepduet/steer',
       'dsh-plugin-deepduet#deepduet/watch',
@@ -450,7 +454,7 @@ test('built dist/client.js loads via __ModuleLoader__ and registers all GUI slot
     assert.equal(mounted.length, 1)
   })
   assert.equal(mounted[0].package, 'dsh-plugin-deepduet')
-  assert.equal(mounted[0].descriptors.length, 6)
+  assert.equal(mounted[0].descriptors.length, 10)
   assert.equal(registeredLocales.length, 1)
   assert.equal(registeredLocales[0].ns, 'deepduet')
   assert.ok(registeredLocales[0].dicts.zh && registeredLocales[0].dicts.en)
@@ -468,6 +472,7 @@ test('built dist/client.js loads via __ModuleLoader__ and registers all GUI slot
     'sidebar.session.row.hover',
     'conversation.session.header.actions',
     'conversation.input.dock',
+    'settings.section',
     'tool.call.toolview:session_spawn',
     'tool.call.toolview:session_steer',
     'tool.call.toolview:session_inspect',

@@ -4,6 +4,16 @@ import { dirname, join, normalize, resolve } from 'node:path'
 import { setTimeout } from 'node:timers/promises'
 import { createDigestQueue } from './digest.js'
 import type { DshHost } from './dsh.js'
+import {
+  resolveWorkerProfile,
+} from './engine-settings.js'
+import type { AgentRoleProfile, DeepDuetEngineSettings } from './remote.js'
+import type {
+  ExternalCliApprovalPolicy,
+  ExternalCliApprovalRequest,
+  ExternalCliEngineRegistry,
+  ExternalCliSandboxMode,
+} from './external-cli-contract.js'
 import { openLedger } from './ledger.js'
 import { summarize } from './text.js'
 
@@ -12,11 +22,30 @@ const MAX_GIT_STATUS_LINES = 200
 const STATE_EXCLUDE_PATTERN = '/.dsh/'
 
 export type TaskContext = { masterId: string; cwd: string }
-export type SpawnInput = { title: string; prompt: string; cwd?: string; isolateWorktree?: boolean }
+export type SpawnInput = {
+  title: string
+  prompt: string
+  cwd?: string
+  isolateWorktree?: boolean
+  engine?: string
+  provider?: string
+  model?: string
+  reasoningEffort?: string
+  sandboxMode?: ExternalCliSandboxMode
+  approvalPolicy?: ExternalCliApprovalPolicy
+}
 export type SteerInput = { sessionId: string; instruction: string }
 export type InspectInput = { sessionId?: string; tailMessages?: number }
 export type ManageInput = { sessionId: string; action: 'stop' | 'archive' | 'remove_worktree' }
 export type WorkerStatus = 'running' | 'idle' | 'failed' | 'completed'
+
+export type PendingApprovalInfo = {
+  requestId: string
+  kind: 'command' | 'file-change' | 'user-input'
+  title: string
+  detail: string
+  options?: { id: string; label: string; description?: string }[]
+}
 
 export type TaskRecord = {
   sessionId: string
@@ -29,6 +58,8 @@ export type TaskRecord = {
   decisionQuestion?: string
   lastSummary?: string
   worktree?: { repoRoot: string; path: string; branch: string }
+  profile?: AgentRoleProfile
+  pendingApproval?: PendingApprovalInfo
   createdAt: number
   updatedAt: number
 }
@@ -151,11 +182,17 @@ async function discardWorktree(worktree: NonNullable<TaskRecord['worktree']>, ho
 
 export type TaskManager = Awaited<ReturnType<typeof openTasks>>
 
+export interface OpenTasksOptions {
+  getSettings?: () => DeepDuetEngineSettings
+  getEngineRegistry?: () => ExternalCliEngineRegistry | undefined
+}
+
 export async function openTasks(
   ledgerDirectory: string,
   host: DshHost,
   warn: (message: string) => void,
   onChange?: (record: TaskRecord) => void,
+  options?: OpenTasksOptions,
 ) {
   const ledger = await openLedger(ledgerDirectory)
   async function save(record: TaskRecord) {
@@ -164,6 +201,7 @@ export async function openTasks(
   }
   const digests = createDigestQueue(host.deliverDigest, warn)
   const runs = new Map<string, Run>()
+  const pendingApprovals = new Map<string, { sessionId: string; req: ExternalCliApprovalRequest }>()
   const provisioning = new Set<string>()
   const mutations = new Map<string, Promise<unknown>>()
   let closing: Promise<void> | undefined
@@ -197,12 +235,71 @@ export async function openTasks(
     })
   }
 
+  function clearPendingApprovalForSession(sessionId: string) {
+    for (const [reqId, entry] of pendingApprovals.entries()) {
+      if (entry.sessionId === sessionId) pendingApprovals.delete(reqId)
+    }
+  }
+
   function start(record: TaskRecord, instruction: string) {
     const { sessionId } = record
     const controller = new AbortController()
+    const onApprovalRequest = (rawReq: ExternalCliApprovalRequest) => {
+      let settled = false
+      const wrappedReq: ExternalCliApprovalRequest = {
+        ...rawReq,
+        resolve(decision) {
+          if (settled) return
+          settled = true
+          pendingApprovals.delete(rawReq.requestId)
+          rawReq.resolve(decision)
+          void mutate(sessionId, async () => {
+            const current = ledger.get(sessionId)
+            if (!current || current.pendingApproval?.requestId !== rawReq.requestId) return
+            const { decisionQuestion: _q, pendingApproval: _p, ...rest } = current
+            await save({ ...rest, needsDecision: false, updatedAt: Date.now() })
+            digests.forget(current.masterId, sessionId)
+          }).catch(() => {})
+        },
+      }
+      pendingApprovals.set(rawReq.requestId, { sessionId, req: wrappedReq })
+      void mutate(sessionId, async () => {
+        if (controller.signal.aborted || closing) return
+        const current = ledger.get(sessionId)
+        if (!current || current.status !== 'running') return
+        const summaryText = `${rawReq.title}: ${rawReq.detail}`
+        const updated: TaskRecord = {
+          ...current,
+          needsDecision: true,
+          decisionQuestion: summaryText,
+          pendingApproval: {
+            requestId: rawReq.requestId,
+            kind: rawReq.kind,
+            title: rawReq.title,
+            detail: rawReq.detail,
+            ...(rawReq.options ? { options: rawReq.options } : {}),
+          },
+          updatedAt: Date.now(),
+        }
+        await save(updated)
+        digests.enqueue({
+          masterId: updated.masterId,
+          sessionId: updated.sessionId,
+          title: updated.title,
+          status: 'idle',
+          needsDecision: true,
+          decisionQuestion: summaryText,
+          summary: rawReq.detail,
+        })
+      }).catch(() => {})
+    }
+
     const turn = Promise.resolve().then(() => {
       if (closing) controller.abort(new Error('DeepDuet unloaded'))
-      return host.runTurn(sessionId, instruction, controller.signal)
+      return host.runTurn(sessionId, instruction, controller.signal, {
+        ...(record.profile ? { profile: record.profile } : {}),
+        onApprovalRequest,
+      })
     })
     const run: Run = { controller, turn }
     runs.set(sessionId, run)
@@ -213,8 +310,11 @@ export async function openTasks(
     ).catch(error => warn(`DeepDuet could not save result for ${sessionId}: ${String(error)}`))
 
     async function settle(status: 'idle' | 'failed', result: ReturnType<typeof parseReply>) {
+      clearPendingApprovalForSession(sessionId)
       if (controller.signal.aborted) return
-      const outcome = run.outcome = { ...record, ...result, status, updatedAt: Date.now() }
+      const current = ledger.get(sessionId) ?? record
+      const { pendingApproval: _pending, decisionQuestion: _oldQ, ...base } = current
+      const outcome = run.outcome = { ...base, ...result, status, updatedAt: Date.now() }
       while (!controller.signal.aborted && !closing) {
         try {
           await mutate(sessionId, async () => {
@@ -260,15 +360,37 @@ export async function openTasks(
       const sessionId = `session-${randomUUID()}`
       return mutate(sessionId, async () => {
         const cwd = await resolveCwd(ctx.cwd, input.cwd)
+        const settings = options?.getSettings?.()
+        const hasOverrides = Boolean(
+          input.engine || input.provider || input.model || input.reasoningEffort || input.sandboxMode || input.approvalPolicy,
+        )
+        const profile = (settings || hasOverrides)
+          ? resolveWorkerProfile(
+              settings ?? {
+                master: { engine: 'native', presetId: 'deepduet' },
+                workerDefault: { engine: 'native', presetId: 'standard' },
+              },
+              {
+                engine: input.engine,
+                provider: input.provider,
+                model: input.model,
+                reasoningEffort: input.reasoningEffort,
+                sandboxMode: input.sandboxMode,
+                approvalPolicy: input.approvalPolicy,
+              },
+              options?.getEngineRegistry?.(),
+            )
+          : undefined
         const worktree = input.isolateWorktree ? await createWorktree(cwd, sessionId, host, ctx.masterId) : undefined
         const record: TaskRecord = {
           sessionId, masterId: ctx.masterId, title: input.title, goal: input.prompt,
           cwd: worktree?.path ?? cwd, ...(worktree && { worktree }),
+          ...(profile && (profile.engine !== 'native' || hasOverrides) ? { profile } : {}),
           status: 'running', needsDecision: false, createdAt: Date.now(), updatedAt: Date.now(),
         }
         provisioning.add(sessionId)
         try {
-          await host.createWorker(record)
+          await host.createWorker({ ...record, ...(profile ? { profile } : {}) })
           await save(record)
         } catch (cause) {
           try {
@@ -279,7 +401,10 @@ export async function openTasks(
               `Could not start worker: ${String(cause)}. Cleanup failed; resources may remain at ${record.cwd}: ${String(cleanup)}`,
               { cause })
           }
-          throw new TaskError('SPAWN_FAILED', `Could not start worker: ${String(cause)}`, { cause })
+          const causeCode = typeof cause === 'object' && cause !== null && 'code' in cause && typeof (cause as { code?: unknown }).code === 'string'
+            ? (cause as { code: string }).code
+            : 'SPAWN_FAILED'
+          throw new TaskError(causeCode, `Could not start worker: ${String(cause)}`, { cause })
         } finally {
           provisioning.delete(sessionId)
         }
@@ -288,14 +413,38 @@ export async function openTasks(
       })
     },
 
+    async resolveApproval(ctx: TaskContext, input: { sessionId: string; requestId: string; approved: boolean; payload?: unknown }) {
+      checkOpen()
+      const record = owned(ctx.masterId, input.sessionId)
+      const entry = pendingApprovals.get(input.requestId)
+      if (!entry || entry.sessionId !== input.sessionId) {
+        throw new TaskError('APPROVAL_NOT_FOUND', `Approval request ${input.requestId} is no longer pending`)
+      }
+      entry.req.resolve({ approved: input.approved, ...(input.payload !== undefined ? { payload: input.payload } : {}) })
+      return receipt(ledger.get(input.sessionId) ?? record)
+    },
+
     async steer(ctx: TaskContext, input: SteerInput) {
       checkOpen()
       requireText(input.instruction, 'instruction')
+      const existing = owned(ctx.masterId, input.sessionId)
+      if (existing.pendingApproval) {
+        const entry = pendingApprovals.get(existing.pendingApproval.requestId)
+        if (entry && entry.sessionId === input.sessionId) {
+          const text = input.instruction.trim()
+          const isDecline = /^(no|deny|decline|reject|cancel|n|拒绝|取消|不允许)$/i.test(text)
+          entry.req.resolve({
+            approved: !isDecline,
+            ...(existing.pendingApproval.kind === 'user-input' ? { payload: text } : {}),
+          })
+          return receipt(ledger.get(input.sessionId) ?? existing)
+        }
+      }
       return mutate(input.sessionId, async () => {
         const record = owned(ctx.masterId, input.sessionId)
         if (record.status === 'completed') throw new TaskError('TASK_ARCHIVED', 'This task has been archived')
         requireIdle(record)
-        const { decisionQuestion: _question, lastSummary: _summary, ...previous } = record
+        const { decisionQuestion: _question, lastSummary: _summary, pendingApproval: _pending, ...previous } = record
         const next: TaskRecord = { ...previous, status: 'running', needsDecision: false, updatedAt: Date.now() }
         await save(next)
         digests.forget(ctx.masterId, input.sessionId)
@@ -328,11 +477,13 @@ export async function openTasks(
         if (action === 'stop') {
           const run = runs.get(sessionId)
           if (run) {
+            clearPendingApprovalForSession(sessionId)
             run.controller.abort(new Error('Stopped by Master'))
             const reply = await run.turn.then(text => text, () => undefined)
             if (reply !== undefined) {
               // The turn finished before the abort landed; keep its real result instead of discarding it.
-              const outcome: TaskRecord = { ...record, ...parseReply(reply), status: 'idle', updatedAt: Date.now() }
+              const { pendingApproval: _pending, ...base } = record
+              const outcome: TaskRecord = { ...base, ...parseReply(reply), status: 'idle', updatedAt: Date.now() }
               if (!outcome.needsDecision) delete outcome.decisionQuestion
               await finish(run, outcome)
               return receipt(outcome)
@@ -345,7 +496,7 @@ export async function openTasks(
           let stopped = record
           // Only an interrupted turn or an outstanding decision changes state; keep idle/failed/completed results intact.
           if (record.status === 'running' || (record.status !== 'completed' && record.needsDecision)) {
-            const { decisionQuestion: _question, ...previous } = record
+            const { decisionQuestion: _question, pendingApproval: _pending, ...previous } = record
             stopped = {
               ...previous, status: 'idle', needsDecision: false, lastSummary: 'Stopped by Master', updatedAt: Date.now(),
             }
@@ -356,7 +507,7 @@ export async function openTasks(
 
         requireIdle(record)
         // Archived tasks cannot be steered, so any outstanding decision is withdrawn.
-        const { decisionQuestion: _question, ...archivable } = record
+        const { decisionQuestion: _question, pendingApproval: _pending, ...archivable } = record
         const archived: TaskRecord = { ...archivable, status: 'completed', needsDecision: false, updatedAt: Date.now() }
         if (action === 'remove_worktree') {
           const worktree = record.worktree

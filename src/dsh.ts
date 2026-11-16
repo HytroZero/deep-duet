@@ -2,7 +2,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { Agent, AgentHandle, AgentOptions } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent-preset-registry'
 import { brandString } from '@deepseek-ai/dsh-brand'
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, type ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type { Message } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-persistence'
@@ -16,6 +16,8 @@ import type {} from '@deepseek-ai/dsh-workspace'
 import { execFile } from 'node:child_process'
 import { isAbsolute, relative, sep } from 'node:path'
 import { promisify } from 'node:util'
+import type { ExternalCliApprovalRequest, ExternalCliEngine } from './external-cli-contract.js'
+import type { AgentRoleProfile } from './remote.js'
 import { summarize } from './text.js'
 
 const exec = promisify(execFile)
@@ -47,8 +49,16 @@ type SessionInspection = {
 }
 
 export type DshHost = {
-  createWorker(task: { sessionId: string; masterId: string; cwd: string; title: string }): Promise<void>
-  runTurn(sessionId: string, input: string, signal: AbortSignal): Promise<string>
+  createWorker(task: { sessionId: string; masterId: string; cwd: string; title: string; profile?: AgentRoleProfile }): Promise<void>
+  runTurn(
+    sessionId: string,
+    input: string,
+    signal: AbortSignal,
+    options?: {
+      profile?: AgentRoleProfile
+      onApprovalRequest?: (req: ExternalCliApprovalRequest) => void
+    },
+  ): Promise<string>
   isBusy(sessionId: string): boolean
   releaseWorker(sessionId: string): Promise<void>
   withIdleWorker<T>(sessionId: string, operation: (checkIdle: () => void) => Promise<T>): Promise<T>
@@ -101,6 +111,30 @@ export function createDshHost(ctx: Context): DshHost {
   const live = (id: string) => ctx.agents.get(brandString<SessionId>(id))
   const hasPending = (agent: Agent) => agent.inbox.nextTurn.length > 0 || agent.inbox.nextStep.length > 0
 
+  function codedError(code: string, message: string): Error & { code: string } {
+    return Object.assign(new Error(message), { code })
+  }
+
+  function resolveExternalEngine(engineId: string): ExternalCliEngine {
+    const engine = ctx.root.get('externalCliEngines')?.get(engineId)
+    if (!engine) {
+      throw codedError('ENGINE_UNAVAILABLE', `External CLI engine "${engineId}" is not installed or unavailable`)
+    }
+    return engine
+  }
+
+  async function requireReadyExternalEngine(engineId: string): Promise<ExternalCliEngine> {
+    const engine = resolveExternalEngine(engineId)
+    const health = await engine.checkHealth()
+    if (!health.available) {
+      throw codedError(health.errorCode ?? 'ENGINE_UNAVAILABLE', health.message ?? `CLI for "${engineId}" was not found`)
+    }
+    if (!health.authenticated) {
+      throw codedError(health.errorCode ?? 'CLI_NOT_AUTHENTICATED', health.message ?? `CLI for "${engineId}" is not authenticated`)
+    }
+    return engine
+  }
+
   async function resume(id: SessionId, signal: AbortSignal): Promise<Agent> {
     const existing = live(id)
     if (existing) return existing
@@ -111,7 +145,7 @@ export function createDshHost(ctx: Context): DshHost {
         resumeSessionId: id,
         signal,
         setup: async agentCtx => {
-          if (preset !== undefined) await agentCtx.agentPresets.mount(agentCtx, preset)
+          if (preset !== undefined) await agentCtx.get('agentPresets')?.mount?.(agentCtx, preset)
         },
       })
       handles.set(id, handle)
@@ -125,7 +159,7 @@ export function createDshHost(ctx: Context): DshHost {
   }
 
   return {
-    async createWorker({ sessionId, masterId, cwd, title }) {
+    async createWorker({ sessionId, masterId, cwd, title, profile }) {
       // A Master opened from storage (e.g. from the GUI after a restart) is loaded on demand.
       const parent = live(masterId)
         ?? await resume(brandString<SessionId>(masterId), AbortSignal.timeout(15_000)).catch(() => undefined)
@@ -139,16 +173,85 @@ export function createDshHost(ctx: Context): DshHost {
         mount?(ctx: unknown, id?: string): Promise<unknown>
       }) | undefined
       const parentPreset = parentPresets?.composedPreset(parent.ctx)
+
+      const isExternal = Boolean(profile && profile.engine !== 'native')
+      const externalEngine = isExternal ? await requireReadyExternalEngine(profile!.engine) : undefined
+
       let workerPreset = parentPreset
-      let mountIndependentStandard = false
-      if (parentPresets && parentPreset === 'deepduet' && typeof parentPresets.resolve === 'function' && typeof parentPresets.mount === 'function') {
+      let mountPresetId: string | undefined
+      if (externalEngine) {
+        workerPreset = externalEngine.presetId
+        if (parentPresets && typeof parentPresets.resolve === 'function' && typeof parentPresets.mount === 'function') {
+          const resolved = await parentPresets.resolve(externalEngine.presetId).catch(() => undefined)
+          if (resolved && resolved.broken === undefined) {
+            mountPresetId = resolved.id
+          }
+        }
+      } else if (parentPresets && parentPreset === 'deepduet' && typeof parentPresets.resolve === 'function' && typeof parentPresets.mount === 'function') {
         const standard = await parentPresets.resolve('standard').catch(() => undefined)
         if (standard && standard.broken === undefined) {
           workerPreset = standard.id
-          mountIndependentStandard = true
+          mountPresetId = standard.id
         }
       }
-      const selection = parent.model.current()
+
+      const parentSelection = parent.model.current()
+      const parentOptions = parent.options
+      const extRegistry = ctx.root.get('externalCliEngines')
+      const parentIsExternal = Boolean(parentSelection && extRegistry?.get(parentSelection.provider))
+
+      async function resolveNativeFallbackSelection() {
+        if (parentSelection && !parentIsExternal) return parentSelection
+        const optProvider = parentOptions.provider
+        const optModel = parentOptions.model
+        if (optProvider && optModel && !extRegistry?.get(optProvider)) {
+          return {
+            provider: optProvider,
+            model: optModel,
+            ...(parentOptions.reasoningEffort ? { reasoningEffort: parentOptions.reasoningEffort } : {}),
+          }
+        }
+        const defaultModelSvc = ctx.root.get('agentDefaultModel') as {
+          currentSelection?(): { provider: string; model: string; reasoningEffort?: ReasoningEffortId } | undefined
+        } | undefined
+        const defSel = defaultModelSvc?.currentSelection?.()
+        if (defSel && !extRegistry?.get(defSel.provider)) return defSel
+        const llm = ctx.root.get('llm')
+        if (llm) {
+          for (const prov of llm.listProviders()) {
+            if (extRegistry?.get(prov.id)) continue
+            const models = await llm.listModels(prov.id).catch(() => [])
+            if (models[0]) return { provider: prov.id, model: models[0].id }
+          }
+        }
+        return undefined
+      }
+
+      const nativeFallback = externalEngine ? undefined : await resolveNativeFallbackSelection()
+      const selection = externalEngine
+        ? {
+            provider: externalEngine.id,
+            model: profile?.model ?? 'codex-default',
+            ...(profile?.reasoningEffort ? { reasoningEffort: profile.reasoningEffort as ReasoningEffortId } : {}),
+          }
+        : (profile?.provider && profile?.model)
+          ? {
+              provider: profile.provider,
+              model: profile.model,
+              ...(profile.reasoningEffort ? { reasoningEffort: profile.reasoningEffort as ReasoningEffortId } : {}),
+            }
+          : (profile?.model && nativeFallback)
+            ? {
+                provider: nativeFallback.provider,
+                model: profile.model,
+                ...(profile.reasoningEffort
+                  ? { reasoningEffort: profile.reasoningEffort as ReasoningEffortId }
+                  : nativeFallback.reasoningEffort
+                    ? { reasoningEffort: nativeFallback.reasoningEffort }
+                    : {}),
+              }
+            : nativeFallback
+
       const policy = parent.ctx.get('sandboxPolicy')?.resolve({ session: parent.session })
       if (policy?.mode === 'workspace-write' && !workspaceWritableRoots(policy).some(root => {
         const path = relative(root, cwd)
@@ -164,14 +267,20 @@ export function createDshHost(ctx: Context): DshHost {
         agentOptions,
         async setup(agentCtx, { session }) {
           const presets = agentCtx.get('agentPresets') as typeof parentPresets
-          if (mountIndependentStandard && presets?.mount && workerPreset) {
-            await presets.mount(agentCtx, workerPreset)
-          } else {
+          if (mountPresetId && presets?.mount) {
+            await presets.mount(agentCtx, mountPresetId)
+          } else if (!externalEngine) {
             presets?.composeFrom(agentCtx, parent.ctx)
           }
-          if (policy) setSandboxMode(session, policy.mode)
+          const effectiveSandbox = profile?.sandboxMode ?? policy?.mode
+          if (effectiveSandbox) setSandboxMode(session, effectiveSandbox)
           const approval = parent.ctx.get('approval')
-          if (approval) setApprovalPolicy(session, approval.overrideOf(parent.session) ?? approval.config.policy ?? 'ask')
+          if (approval) {
+            const effectiveApproval = profile?.approvalPolicy === 'never'
+              ? 'never'
+              : (profile?.approvalPolicy ? 'ask' : (approval.overrideOf(parent.session) ?? approval.config.policy ?? 'ask'))
+            setApprovalPolicy(session, effectiveApproval)
+          }
         },
       })
       handles.set(id, handle)
@@ -179,6 +288,14 @@ export function createDshHost(ctx: Context): DshHost {
         const session = handle.agent.session
         if (selection) handle.agent.model.select(selection)
         handle.agent.ctx.get('sessionTitle')?.rename(session, title)
+        if (externalEngine) {
+          await externalEngine.configureSession(sessionId, {
+            ...(profile?.model ? { model: profile.model } : {}),
+            ...(profile?.reasoningEffort ? { reasoningEffort: profile.reasoningEffort } : {}),
+            ...(profile?.sandboxMode ? { sandboxMode: profile.sandboxMode } : policy ? { sandboxMode: policy.mode } : {}),
+            ...(profile?.approvalPolicy ? { approvalPolicy: profile.approvalPolicy } : {}),
+          })
+        }
         await ctx.sessions.flush(session)
         // Attach shared-cwd workers directly to the project Workspace so the sidebar updates immediately.
         const workspace = await ctx.get('workspaceRegistry')?.resolveByPath(cwd).catch(() => undefined)
@@ -190,12 +307,30 @@ export function createDshHost(ctx: Context): DshHost {
       }
     },
 
-    async runTurn(sessionId, input, signal) {
+    async runTurn(sessionId, input, signal, options) {
       signal.throwIfAborted()
       const agent = await resume(brandString<SessionId>(sessionId), signal)
       signal.throwIfAborted()
       if (agent.status !== 'idle' || hasPending(agent)) {
         throw new Error(`Session ${sessionId} already has active or queued work`)
+      }
+
+      const profile = options?.profile
+      if (profile && profile.engine !== 'native') {
+        const engine = await requireReadyExternalEngine(profile.engine)
+        const result = await engine.runSessionTurn({
+          sessionId,
+          input,
+          config: {
+            ...(profile.model ? { model: profile.model } : {}),
+            ...(profile.reasoningEffort ? { reasoningEffort: profile.reasoningEffort } : {}),
+            ...(profile.sandboxMode ? { sandboxMode: profile.sandboxMode } : {}),
+            ...(profile.approvalPolicy ? { approvalPolicy: profile.approvalPolicy } : {}),
+          },
+          signal,
+          ...(options?.onApprovalRequest ? { onApprovalRequest: options.onApprovalRequest } : {}),
+        })
+        return result.replyText
       }
 
       const message = createUserMessage({
@@ -253,7 +388,14 @@ export function createDshHost(ctx: Context): DshHost {
 
     isBusy(id) {
       const agent = live(id)
-      return agent !== undefined && (agent.status === 'running' || hasPending(agent))
+      if (agent !== undefined && (agent.status === 'running' || hasPending(agent))) return true
+      const registry = ctx.root.get('externalCliEngines')
+      if (registry) {
+        for (const engine of registry.list()) {
+          if (engine.isSessionBusy(id)) return true
+        }
+      }
+      return false
     },
 
     async releaseWorker(id) {

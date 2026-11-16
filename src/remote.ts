@@ -1,5 +1,37 @@
 import { createTypertRemoteInfo } from '@deepseek-ai/dsh-typert-protocol/remote-info'
 import type { z as ZodNamespace } from 'zod'
+import type {
+  ExternalCliApprovalPolicy,
+  ExternalCliHealth,
+  ExternalCliModelInfo,
+  ExternalCliSandboxMode,
+} from './external-cli-contract.js'
+
+export type AgentRoleProfile = {
+  engine: 'native' | string
+  presetId: string
+  provider?: string
+  model?: string
+  reasoningEffort?: string
+  sandboxMode?: ExternalCliSandboxMode
+  approvalPolicy?: ExternalCliApprovalPolicy
+}
+
+export type DeepDuetEngineSettings = {
+  master: AgentRoleProfile
+  workerDefault: AgentRoleProfile
+}
+
+export type EngineDescriptor = {
+  id: string
+  presetId: string
+  label: string
+  kind: 'native' | 'external'
+  supportedSandboxes: readonly ExternalCliSandboxMode[]
+  supportedApprovals: readonly ExternalCliApprovalPolicy[]
+  health: ExternalCliHealth
+  models: Array<ExternalCliModelInfo & { provider?: string }>
+}
 
 export type WorkerStatus = 'running' | 'idle' | 'failed' | 'completed'
 
@@ -7,6 +39,14 @@ export interface DeepDuetWorktree {
   repoRoot: string
   path: string
   branch: string
+}
+
+export type PendingApprovalInfo = {
+  requestId: string
+  kind: 'command' | 'file-change' | 'user-input'
+  title: string
+  detail: string
+  options?: { id: string; label: string; description?: string }[]
 }
 
 export interface TaskRecord {
@@ -20,6 +60,8 @@ export interface TaskRecord {
   decisionQuestion?: string
   lastSummary?: string
   worktree?: DeepDuetWorktree
+  profile?: AgentRoleProfile
+  pendingApproval?: PendingApprovalInfo
   createdAt: number
   updatedAt: number
 }
@@ -30,6 +72,12 @@ export interface DeepDuetSpawnParams {
   prompt: string
   cwd?: string
   isolateWorktree?: boolean
+  engine?: string
+  provider?: string
+  model?: string
+  reasoningEffort?: string
+  sandboxMode?: ExternalCliSandboxMode
+  approvalPolicy?: ExternalCliApprovalPolicy
 }
 
 export interface DeepDuetSteerParams {
@@ -48,6 +96,18 @@ export interface DeepDuetInspectParams {
   masterId: string
   sessionId: string
   tailMessages?: number
+}
+
+export interface DeepDuetResolveApprovalParams {
+  masterId: string
+  sessionId: string
+  requestId: string
+  approved: boolean
+  payload?: unknown
+}
+
+export interface DeepDuetEnginesSnapshot {
+  engines: EngineDescriptor[]
 }
 
 export interface DeepDuetTasksSnapshot {
@@ -85,6 +145,31 @@ export interface DeepDuetInspectResult {
 }
 
 export function createDeepDuetRemoteInfo(z: typeof ZodNamespace) {
+  const sandboxSchema = z.enum(['read-only', 'workspace-write', 'danger-full-access'])
+  const approvalSchema = z.enum(['untrusted', 'on-request', 'never'])
+
+  const profileSchema = z.object({
+    engine: z.string(),
+    presetId: z.string(),
+    provider: z.string().optional(),
+    model: z.string().optional(),
+    reasoningEffort: z.string().optional(),
+    sandboxMode: sandboxSchema.optional(),
+    approvalPolicy: approvalSchema.optional(),
+  })
+
+  const pendingApprovalSchema = z.object({
+    requestId: z.string(),
+    kind: z.enum(['command', 'file-change', 'user-input']),
+    title: z.string(),
+    detail: z.string(),
+    options: z.array(z.object({
+      id: z.string(),
+      label: z.string(),
+      description: z.string().optional(),
+    })).optional(),
+  })
+
   const worktreeSchema = z.object({
     repoRoot: z.string(),
     path: z.string(),
@@ -102,6 +187,8 @@ export function createDeepDuetRemoteInfo(z: typeof ZodNamespace) {
     decisionQuestion: z.string().optional(),
     lastSummary: z.string().optional(),
     worktree: worktreeSchema.optional(),
+    profile: profileSchema.optional(),
+    pendingApproval: pendingApprovalSchema.optional(),
     createdAt: z.number(),
     updatedAt: z.number(),
   })
@@ -144,6 +231,45 @@ export function createDeepDuetRemoteInfo(z: typeof ZodNamespace) {
       z.object({ text: z.string() }),
       z.object({ unavailable: z.literal(true) }),
     ]),
+  })
+
+  const settingsSchema = z.object({
+    master: profileSchema,
+    workerDefault: profileSchema,
+  })
+
+  const engineDescriptorSchema = z.object({
+    id: z.string(),
+    presetId: z.string(),
+    label: z.string(),
+    kind: z.enum(['native', 'external']),
+    supportedSandboxes: z.array(sandboxSchema),
+    supportedApprovals: z.array(approvalSchema),
+    health: z.object({
+      available: z.boolean(),
+      binaryPath: z.string().optional(),
+      version: z.string().optional(),
+      authenticated: z.boolean(),
+      accountLabel: z.string().optional(),
+      errorCode: z.enum(['CLI_NOT_FOUND', 'CLI_NOT_AUTHENTICATED', 'CLI_UNHEALTHY']).optional(),
+      message: z.string().optional(),
+    }),
+    models: z.array(z.object({
+      id: z.string(),
+      name: z.string(),
+      provider: z.string().optional(),
+      description: z.string().optional(),
+      reasoningEfforts: z.array(z.object({
+        id: z.string(),
+        name: z.string(),
+        description: z.string().optional(),
+      })).optional(),
+      defaultReasoningEffort: z.string().optional(),
+    })),
+  })
+
+  const enginesSnapshotSchema = z.object({
+    engines: z.array(engineDescriptorSchema),
   })
 
   const strictSchema = <T extends ZodNamespace.ZodType>(
@@ -219,6 +345,12 @@ export function createDeepDuetRemoteInfo(z: typeof ZodNamespace) {
               prompt: z.string().min(1),
               cwd: z.string().optional(),
               isolateWorktree: z.boolean().optional(),
+              engine: z.string().optional(),
+              provider: z.string().optional(),
+              model: z.string().optional(),
+              reasoningEffort: z.string().optional(),
+              sandboxMode: sandboxSchema.optional(),
+              approvalPolicy: approvalSchema.optional(),
             }),
             { type: 'object' },
           ),
@@ -301,6 +433,76 @@ export function createDeepDuetRemoteInfo(z: typeof ZodNamespace) {
           { type: 'object' },
         ),
       },
+      'deepduet/engines': {
+        service: 'deepduet',
+        description: 'List DSH Native and discovered external CLI engines with their models and health.',
+        implementation: 'remoteEngines',
+        invocation: { kind: 'direct' },
+        parameters: [],
+        result: strictSchema(
+          'dsh-plugin-deepduet#DeepDuetEnginesSnapshot',
+          () => enginesSnapshotSchema,
+          { type: 'object' },
+        ),
+      },
+      'deepduet/getSettings': {
+        service: 'deepduet',
+        description: 'Read DeepDuet Duet (Master) and Worker default engine profiles.',
+        implementation: 'remoteGetSettings',
+        invocation: { kind: 'direct' },
+        parameters: [],
+        result: strictSchema(
+          'dsh-plugin-deepduet#DeepDuetEngineSettings',
+          () => settingsSchema,
+          { type: 'object' },
+        ),
+      },
+      'deepduet/setSettings': {
+        service: 'deepduet',
+        description: 'Update and persist DeepDuet Duet (Master) and Worker default engine profiles.',
+        implementation: 'remoteSetSettings',
+        invocation: { kind: 'direct' },
+        parameters: [
+          param(
+            'input',
+            'Updated DeepDuet engine settings',
+            'dsh-plugin-deepduet#DeepDuetEngineSettings',
+            () => settingsSchema,
+            { type: 'object' },
+          ),
+        ],
+        result: strictSchema(
+          'dsh-plugin-deepduet#DeepDuetEngineSettings',
+          () => settingsSchema,
+          { type: 'object' },
+        ),
+      },
+      'deepduet/resolveApproval': {
+        service: 'deepduet',
+        description: 'Approve, decline, or answer a pending external CLI approval request for a Worker.',
+        implementation: 'remoteResolveApproval',
+        invocation: { kind: 'direct' },
+        parameters: [
+          param(
+            'input',
+            'Approval resolution decision',
+            'dsh-plugin-deepduet#DeepDuetResolveApprovalParams',
+            () => z.object({
+              masterId: z.string().min(1),
+              sessionId: z.string().min(1),
+              requestId: z.string().min(1),
+              approved: z.boolean(),
+              payload: z.unknown().optional(),
+            }),
+            { type: 'object' },
+          ),
+        ],
+        result: strictSchema(
+          'dsh-plugin-deepduet#DeepDuetTaskReceipt',
+          () => taskReceiptSchema,
+          { type: 'object' },
+        ),
+      },
     },
-  } as never, z)
+  } as never, z as never)
 }

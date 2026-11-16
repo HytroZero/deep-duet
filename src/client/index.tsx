@@ -6,11 +6,13 @@ import type { MenuAction } from '@deepseek-ai/dsh-client-ui-context-menu/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
+import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-tool/client'
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { DeepDuetSettingsSection } from './DeepDuetSettingsSection'
 import { DeepDuetSidebarTab, DeepDuetSidebarTabTitle } from './DeepDuetSidebarTab'
 import {
   DeepDuetHeaderActions,
@@ -136,6 +138,19 @@ export function apply(ctx: Context): void {
     { name: 'conversation.input.dock', id: 'deepduet-input-dock', locale: NS, inject: injectSurface },
     (props: PropsRuntime<'conversation.input.dock'>) => <DeepDuetInputDock {...surfaceProps} {...props} />,
     'deepduet: input dock',
+  )
+
+  registerSlot(
+    {
+      name: 'settings.section',
+      id: 'deepduet',
+      order: 24,
+      label: () => t('settings.nav'),
+      locale: NS,
+      inject: injectSurface,
+    },
+    (props: PropsRuntime<'settings.section'>) => <DeepDuetSettingsSection {...surfaceProps} {...props} />,
+    'deepduet: settings section',
   )
 
   for (const toolKey of DEEPDUET_TOOLS) {
