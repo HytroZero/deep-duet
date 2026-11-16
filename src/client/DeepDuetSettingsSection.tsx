@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react'
 import type { AgentRoleProfile, DeepDuetEngineSettings, EngineDescriptor } from '../remote'
 import styles from './DeepDuetWorker.module.css'
 import type { NS } from './locales'
+import { SelectMenu } from './SelectMenu'
 import { useDeepDuetSelector, type DeepDuetClientStore, type DeepDuetStoreState } from './store'
 
 export interface DeepDuetSettingsInjected {
@@ -14,6 +15,10 @@ export interface DeepDuetSettingsInjected {
 }
 
 type DeepDuetSettingsProps = PropsRuntime<'settings.section'> & DeepDuetSettingsInjected
+
+function modelOptionKey(model: { id: string; provider?: string }): string {
+  return `${model.provider ?? ''}::${model.id}`
+}
 
 function RoleProfileCard({
   title,
@@ -41,6 +46,48 @@ function RoleProfileCard({
   const isUnhealthyExternal = selectedEngine?.kind === 'external'
     && (!selectedEngine.health.available || !selectedEngine.health.authenticated)
 
+  const engineOptions = engines.length === 0
+    ? [{ value: 'native', label: 'DSH Native' }]
+    : engines.map(engine => ({ value: engine.id, label: engine.label }))
+
+  const selectedModelValue = selectedModel
+    ? modelOptionKey(selectedModel)
+    : (profile.model ? `${profile.provider ?? ''}::${profile.model}` : '')
+
+  const modelOptions = [
+    { value: '', label: t('settings.modelDefault') },
+    ...models.map(m => ({ value: modelOptionKey(m), label: m.name })),
+    ...(profile.model && !selectedModel
+      ? [{ value: selectedModelValue, label: profile.model }]
+      : []),
+  ]
+
+  const effortOptions = [
+    { value: '', label: t('settings.modelDefault') },
+    ...efforts.map(eff => ({ value: eff.id, label: eff.name })),
+    ...(profile.reasoningEffort && !efforts.some(eff => eff.id === profile.reasoningEffort)
+      ? [{ value: profile.reasoningEffort, label: profile.reasoningEffort }]
+      : []),
+  ]
+
+  const sandboxOptions = sandboxes.map(sb => ({
+    value: sb,
+    label: sb === 'read-only'
+      ? t('settings.sandbox.readOnly')
+      : sb === 'danger-full-access'
+        ? t('settings.sandbox.dangerFullAccess')
+        : t('settings.sandbox.workspaceWrite'),
+  }))
+
+  const approvalOptions = approvals.map(ap => ({
+    value: ap,
+    label: ap === 'untrusted'
+      ? t('settings.approval.untrusted')
+      : ap === 'never'
+        ? t('settings.approval.never')
+        : t('settings.approval.onRequest'),
+  }))
+
   return (
     <div className={styles.settingsCard}>
       <div className={styles.taskCardTop}>
@@ -59,13 +106,12 @@ function RoleProfileCard({
       )}
 
       <div className={styles.settingsGrid}>
-        <label className={styles.fieldLabel}>
+        <div className={styles.fieldLabel}>
           <span>{t('settings.engine')}</span>
-          <select
-            className={styles.selectInput}
+          <SelectMenu
             value={profile.engine}
-            onChange={(e) => {
-              const nextEngineId = e.target.value
+            options={engineOptions}
+            onChange={(nextEngineId) => {
               const nextEngine = engines.find(item => item.id === nextEngineId)
               const nextPresetId = nextEngineId === 'native'
                 ? (role === 'master' ? 'deepduet' : 'standard')
@@ -87,59 +133,48 @@ function RoleProfileCard({
                   : (nextEngine?.supportedApprovals[0] ?? 'on-request'),
               })
             }}
-          >
-            {engines.length === 0 ? (
-              <option value="native">DSH Native</option>
-            ) : (
-              engines.map(engine => (
-                <option key={engine.id} value={engine.id}>
-                  {engine.label}
-                </option>
-              ))
-            )}
-          </select>
-        </label>
+          />
+        </div>
 
-        <label className={styles.fieldLabel}>
+        <div className={styles.fieldLabel}>
           <span>{t('settings.model')}</span>
-          <select
-            className={styles.selectInput}
-            value={profile.model ? `${profile.provider ?? ''}::${profile.model}` : ''}
-            onChange={(e) => {
-              const val = e.target.value
+          <SelectMenu
+            value={selectedModelValue}
+            options={modelOptions}
+            onChange={(val) => {
+              const { model: _m, provider: _p, reasoningEffort: _r, ...rest } = profile
               if (!val) {
-                const { model: _m, provider: _p, reasoningEffort: _r, ...rest } = profile
-                onChange(rest)
+                onChange({
+                  ...rest,
+                  ...(profile.engine !== 'native' ? { provider: profile.engine } : {}),
+                })
                 return
               }
               const [prov, ...restModel] = val.split('::')
               const modelId = restModel.join('::')
               const matched = models.find(m => m.id === modelId && (!prov || m.provider === prov))
+              const nextProvider = prov || (profile.engine === 'native' ? undefined : profile.engine)
+              const nextEffort = matched?.defaultReasoningEffort
+                ?? (profile.reasoningEffort && matched?.reasoningEfforts?.some(e => e.id === profile.reasoningEffort)
+                  ? profile.reasoningEffort
+                  : undefined)
               onChange({
-                ...profile,
-                ...(prov ? { provider: prov } : {}),
+                ...rest,
+                ...(nextProvider ? { provider: nextProvider } : {}),
                 model: modelId,
-                ...(matched?.defaultReasoningEffort ? { reasoningEffort: matched.defaultReasoningEffort } : {}),
+                ...(nextEffort ? { reasoningEffort: nextEffort } : {}),
               })
             }}
-          >
-            <option value="">{t('settings.modelDefault')}</option>
-            {models.map(m => (
-              <option key={`${m.provider ?? profile.engine}::${m.id}`} value={`${m.provider ?? ''}::${m.id}`}>
-                {m.name}
-              </option>
-            ))}
-          </select>
-        </label>
+          />
+        </div>
 
-        <label className={styles.fieldLabel}>
+        <div className={styles.fieldLabel}>
           <span>{t('settings.effort')}</span>
-          <select
-            className={styles.selectInput}
+          <SelectMenu
             value={profile.reasoningEffort ?? ''}
+            options={effortOptions}
             disabled={efforts.length === 0}
-            onChange={(e) => {
-              const val = e.target.value
+            onChange={(val) => {
               if (!val) {
                 const { reasoningEffort: _r, ...rest } = profile
                 onChange(rest)
@@ -147,57 +182,32 @@ function RoleProfileCard({
               }
               onChange({ ...profile, reasoningEffort: val })
             }}
-          >
-            <option value="">{t('settings.modelDefault')}</option>
-            {efforts.map(eff => (
-              <option key={eff.id} value={eff.id}>{eff.name}</option>
-            ))}
-          </select>
-        </label>
+          />
+        </div>
 
-        <label className={styles.fieldLabel}>
+        <div className={styles.fieldLabel}>
           <span>{t('settings.sandbox')}</span>
-          <select
-            className={styles.selectInput}
+          <SelectMenu
             value={profile.sandboxMode ?? 'workspace-write'}
-            onChange={e => onChange({
+            options={sandboxOptions}
+            onChange={val => onChange({
               ...profile,
-              sandboxMode: e.target.value as AgentRoleProfile['sandboxMode'],
+              sandboxMode: val as AgentRoleProfile['sandboxMode'],
             })}
-          >
-            {sandboxes.map(sb => (
-              <option key={sb} value={sb}>
-                {sb === 'read-only'
-                  ? t('settings.sandbox.readOnly')
-                  : sb === 'danger-full-access'
-                    ? t('settings.sandbox.dangerFullAccess')
-                    : t('settings.sandbox.workspaceWrite')}
-              </option>
-            ))}
-          </select>
-        </label>
+          />
+        </div>
 
-        <label className={styles.fieldLabel}>
+        <div className={styles.fieldLabel}>
           <span>{t('settings.approval')}</span>
-          <select
-            className={styles.selectInput}
+          <SelectMenu
             value={profile.approvalPolicy ?? 'on-request'}
-            onChange={e => onChange({
+            options={approvalOptions}
+            onChange={val => onChange({
               ...profile,
-              approvalPolicy: e.target.value as AgentRoleProfile['approvalPolicy'],
+              approvalPolicy: val as AgentRoleProfile['approvalPolicy'],
             })}
-          >
-            {approvals.map(ap => (
-              <option key={ap} value={ap}>
-                {ap === 'untrusted'
-                  ? t('settings.approval.untrusted')
-                  : ap === 'never'
-                    ? t('settings.approval.never')
-                    : t('settings.approval.onRequest')}
-              </option>
-            ))}
-          </select>
-        </label>
+          />
+        </div>
       </div>
     </div>
   )

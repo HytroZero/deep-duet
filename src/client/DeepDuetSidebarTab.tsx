@@ -13,6 +13,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import type { TaskRecord } from '../remote'
 import styles from './DeepDuetWorker.module.css'
 import type { NS } from './locales'
+import { SelectMenu } from './SelectMenu'
 import { getWorkerStatusView } from './status'
 import { useDeepDuetSelector, type DeepDuetClientStore, type DeepDuetStoreState } from './store'
 
@@ -319,31 +320,36 @@ export function DeepDuetSidebarTab({
                     </button>
                     {showOverride && (
                       <div className={styles.overrideBox}>
-                        <label className={styles.fieldLabel}>
+                        <div className={styles.fieldLabel}>
                           <span>{t('spawn.engine')}</span>
-                          <select
-                            className={styles.selectInput}
+                          <SelectMenu
                             value={overrideEngine}
-                            onChange={(e) => {
-                              setOverrideEngine(e.target.value)
+                            options={[
+                              { value: '', label: `${t('spawn.useDefault')} (${engineSettings.workerDefault.engine})` },
+                              ...engines.map(eng => ({ value: eng.id, label: eng.label })),
+                            ]}
+                            onChange={(nextEngine) => {
+                              setOverrideEngine(nextEngine)
                               setOverrideProvider('')
                               setOverrideModel('')
                               setOverrideEffort('')
                             }}
-                          >
-                            <option value="">{t('spawn.useDefault')} ({engineSettings.workerDefault.engine})</option>
-                            {engines.map(eng => (
-                              <option key={eng.id} value={eng.id}>{eng.label}</option>
-                            ))}
-                          </select>
-                        </label>
-                        <label className={styles.fieldLabel}>
+                          />
+                        </div>
+                        <div className={styles.fieldLabel}>
                           <span>{t('spawn.model')}</span>
-                          <select
-                            className={styles.selectInput}
-                            value={overrideModel ? `${overrideProvider}::${overrideModel}` : ''}
-                            onChange={(e) => {
-                              const val = e.target.value
+                          <SelectMenu
+                            value={overrideModelDesc
+                              ? `${overrideModelDesc.provider ?? ''}::${overrideModelDesc.id}`
+                              : (overrideModel ? `${overrideProvider}::${overrideModel}` : '')}
+                            options={[
+                              { value: '', label: t('spawn.useDefault') },
+                              ...overrideModels.map(m => ({
+                                value: `${m.provider ?? ''}::${m.id}`,
+                                label: m.name,
+                              })),
+                            ]}
+                            onChange={(val) => {
                               if (!val) {
                                 setOverrideProvider('')
                                 setOverrideModel('')
@@ -351,47 +357,40 @@ export function DeepDuetSidebarTab({
                                 return
                               }
                               const [prov, ...rest] = val.split('::')
+                              const modelId = rest.join('::')
+                              const matched = overrideModels.find(m => m.id === modelId && (!prov || m.provider === prov))
                               setOverrideProvider(prov ?? '')
-                              setOverrideModel(rest.join('::'))
-                              setOverrideEffort('')
+                              setOverrideModel(modelId)
+                              setOverrideEffort(matched?.defaultReasoningEffort ?? '')
                             }}
-                          >
-                            <option value="">{t('spawn.useDefault')}</option>
-                            {overrideModels.map(m => (
-                              <option key={`${m.provider ?? activeOverrideEngine}::${m.id}`} value={`${m.provider ?? ''}::${m.id}`}>
-                                {m.name}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
+                          />
+                        </div>
                         {overrideEfforts.length > 0 && (
-                          <label className={styles.fieldLabel}>
+                          <div className={styles.fieldLabel}>
                             <span>{t('spawn.effort')}</span>
-                            <select
-                              className={styles.selectInput}
+                            <SelectMenu
                               value={overrideEffort}
-                              onChange={e => setOverrideEffort(e.target.value)}
-                            >
-                              <option value="">{t('spawn.useDefault')}</option>
-                              {overrideEfforts.map(eff => (
-                                <option key={eff.id} value={eff.id}>{eff.name}</option>
-                              ))}
-                            </select>
-                          </label>
+                              options={[
+                                { value: '', label: t('spawn.useDefault') },
+                                ...overrideEfforts.map(eff => ({ value: eff.id, label: eff.name })),
+                              ]}
+                              onChange={setOverrideEffort}
+                            />
+                          </div>
                         )}
-                        <label className={styles.fieldLabel}>
+                        <div className={styles.fieldLabel}>
                           <span>{t('spawn.sandbox')}</span>
-                          <select
-                            className={styles.selectInput}
+                          <SelectMenu
                             value={overrideSandbox}
-                            onChange={e => setOverrideSandbox(e.target.value)}
-                          >
-                            <option value="">{t('spawn.useDefault')}</option>
-                            <option value="read-only">{t('settings.sandbox.readOnly')}</option>
-                            <option value="workspace-write">{t('settings.sandbox.workspaceWrite')}</option>
-                            <option value="danger-full-access">{t('settings.sandbox.dangerFullAccess')}</option>
-                          </select>
-                        </label>
+                            options={[
+                              { value: '', label: t('spawn.useDefault') },
+                              { value: 'read-only', label: t('settings.sandbox.readOnly') },
+                              { value: 'workspace-write', label: t('settings.sandbox.workspaceWrite') },
+                              { value: 'danger-full-access', label: t('settings.sandbox.dangerFullAccess') },
+                            ]}
+                            onChange={setOverrideSandbox}
+                          />
+                        </div>
                       </div>
                     )}
                   </>

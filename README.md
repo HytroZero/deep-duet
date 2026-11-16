@@ -77,7 +77,7 @@ npm run typecheck && npm test
 
 ```sh
 npm pack
-dsh plugin --profile web add "file:$PWD/dsh-plugin-deepduet-1.0.0.tgz"
+dsh plugin --profile web add "file:$PWD/dsh-plugin-deepduet-1.1.0.tgz"
 ```
 
 在目标项目目录下启动 DSH Web，新建或切换会话模式时选择 **DeepDuet** 即可开始：

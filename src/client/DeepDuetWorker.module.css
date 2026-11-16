@@ -298,13 +298,19 @@
 .textArea {
   width: 100%;
   box-sizing: border-box;
-  border-radius: 6px;
-  border: 1px solid var(--dsw-border-subtle, rgba(128, 128, 128, 0.3));
-  background: var(--dsw-bg-canvas, transparent);
-  color: var(--dsw-text-primary, inherit);
-  padding: 6px 8px;
+  border-radius: var(--dsw-radius-md, 6px);
+  border: 0.5px solid var(--dsw-alias-border-l4, rgba(128, 128, 128, 0.3));
+  background: var(--dsw-alias-bg-layer-3, transparent);
+  color: var(--dsw-alias-label-primary, inherit);
+  padding: 6px 10px;
   font-size: 12.5px;
   font-family: inherit;
+}
+
+.textInput:focus-visible,
+.textArea:focus-visible {
+  outline: none;
+  border-color: var(--dsw-alias-state-business-primary, #2563eb);
 }
 
 .textArea {
@@ -501,17 +507,62 @@
   word-break: break-word;
 }
 
-.selectInput {
+.selectRoot {
+  display: flex;
   width: 100%;
+}
+
+.selectTrigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  height: 32px;
+  padding: 0 10px;
   box-sizing: border-box;
-  height: 30px;
-  border-radius: 6px;
-  border: 1px solid var(--dsw-border-subtle, rgba(128, 128, 128, 0.3));
-  background: var(--dsw-bg-canvas, transparent);
-  color: var(--dsw-text-primary, inherit);
-  padding: 0 8px;
-  font-size: 12.5px;
+  border-radius: var(--dsw-radius-md, 6px);
+  border: 0.5px solid var(--dsw-alias-border-l4, rgba(128, 128, 128, 0.3));
+  background: var(--dsw-alias-bg-layer-3, transparent);
+  color: var(--dsw-alias-label-primary, inherit);
   font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 400;
+  text-align: left;
+  cursor: pointer;
+}
+
+.selectTrigger:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(128, 128, 128, 0.08));
+}
+
+.selectTrigger:focus-visible {
+  outline: none;
+  border-color: var(--dsw-alias-state-business-primary, #2563eb);
+}
+
+.selectTrigger:disabled {
+  opacity: 0.5;
+  color: var(--dsw-alias-label-tertiary, rgba(128, 128, 128, 0.7));
+  cursor: default;
+}
+
+.selectValue {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.selectChevron {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary, rgba(128, 128, 128, 0.8));
+}
+
+.selectMenuList.selectMenuList {
+  z-index: 1250;
+  max-height: 280px;
 }
 
 .overrideBox {
@@ -559,7 +610,7 @@
 .settingsSubtitle {
   margin: 4px 0 0;
   font-size: 13px;
-  color: var(--dsw-text-secondary, rgba(128, 128, 128, 0.9));
+  color: var(--dsw-alias-label-secondary, rgba(128, 128, 128, 0.9));
 }
 
 .settingsCard {
@@ -567,9 +618,9 @@
   flex-direction: column;
   gap: 12px;
   padding: 14px 16px;
-  border-radius: 8px;
-  border: 1px solid var(--dsw-border-subtle, rgba(128, 128, 128, 0.25));
-  background: var(--dsw-surface-elevated, rgba(128, 128, 128, 0.05));
+  border-radius: var(--dsw-radius-md, 8px);
+  border: 1px solid var(--dsw-alias-border-l1, rgba(128, 128, 128, 0.25));
+  background: var(--dsw-alias-bg-module-platform, rgba(128, 128, 128, 0.05));
 }
 
 .settingsGrid {
@@ -580,9 +631,9 @@
 
 .settingsWarn {
   padding: 8px 10px;
-  border-radius: 6px;
-  background: rgba(245, 158, 11, 0.14);
-  color: #b45309;
+  border-radius: var(--dsw-radius-sm, 6px);
+  background: var(--dsw-alias-state-warn-tertiary, rgba(245, 158, 11, 0.14));
+  color: var(--dsw-alias-state-warn-label, #b45309);
   font-size: 12px;
 }
 
